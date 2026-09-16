@@ -1,9 +1,11 @@
-﻿namespace Fresnel.Audio;
+﻿using System.Text.Json;
+using System.Text.Json.Serialization;
 
+namespace Fresnel.Audio;
+
+[JsonConverter(typeof(DbJsonConverter))]
 public readonly record struct Db : IComparable<Db>
 {
-    public static readonly Db Zero = default;
-
     public static readonly Db Silence = new(float.NegativeInfinity);
 
     private readonly float _db;
@@ -31,6 +33,16 @@ public readonly record struct Db : IComparable<Db>
         }
 
         return new Db(MathF.Log10(Math.Clamp(linear, 0f, 1f)) * 20f);
+    }
+
+    public static implicit operator Db(float value)
+    {
+        return new Db(value);
+    }
+
+    public static implicit operator float(Db db)
+    {
+        return db._db;
     }
 
     public float ToLinear()
@@ -66,5 +78,31 @@ public readonly record struct Db : IComparable<Db>
     public override string ToString()
     {
         return $"{_db} dB";
+    }
+}
+
+public sealed class DbJsonConverter : JsonConverter<Db>
+{
+    public override bool HandleNull => true;
+
+    public override Db Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        return reader.TokenType switch
+        {
+            JsonTokenType.Null => Db.Silence,
+            JsonTokenType.Number => new Db(reader.GetSingle()),
+            _ => throw new JsonException("A dB value must be a JSON number or null for silence.")
+        };
+    }
+
+    public override void Write(Utf8JsonWriter writer, Db value, JsonSerializerOptions options)
+    {
+        if (value == Db.Silence)
+        {
+            writer.WriteNullValue();
+            return;
+        }
+
+        writer.WriteNumberValue(value);
     }
 }

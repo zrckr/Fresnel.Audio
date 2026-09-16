@@ -1,12 +1,14 @@
-﻿using System.Text.Json.Serialization;
-
-namespace Fresnel.Audio;
+﻿namespace Fresnel.Audio;
 
 public sealed class AudioBus
 {
     public string Name { get; }
 
-    public string RouteTo { get => _routeTo?.Invoke()?.Name ?? field; } = "";
+    public AudioBus? Parent { get; }
+
+    public AudioBusConfig Config { get; }
+
+    public AudioMixer Mixer { get; }
 
     public Db Volume
     {
@@ -19,7 +21,25 @@ public sealed class AudioBus
                 Changed?.Invoke();
             }
         }
-    } = Db.Zero;
+    } = 0f;
+
+    public float Pan
+    {
+        get => field;
+        set
+        {
+            if (!float.IsFinite(value) || value is < -1f or > 1f)
+            {
+                throw new ArgumentOutOfRangeException(nameof(value));
+            }
+
+            if (Math.Abs(field - value) > float.Epsilon)
+            {
+                field = value;
+                Changed?.Invoke();
+            }
+        }
+    }
 
     public bool Muted
     {
@@ -47,39 +67,13 @@ public sealed class AudioBus
         }
     }
 
-    public float Pan
-    {
-        get;
-        set
-        {
-            value = Math.Clamp(value, -1f, 1f);
-            if (Math.Abs(field - value) > float.Epsilon)
-            {
-                field = value;
-                Changed?.Invoke();
-            }
-        }
-    }
-
     internal event Action? Changed;
 
-    [JsonIgnore] private readonly Func<AudioBus?>? _routeTo;
-
-    public AudioBus(string name, Func<AudioBus?>? routeTo = null)
+    internal AudioBus(AudioMixer mixer, string name, AudioBusConfig config, AudioBus? parent)
     {
+        Mixer = mixer;
         Name = name;
-        _routeTo = routeTo;
+        Config = config;
+        Parent = parent;
     }
-
-    [JsonConstructor]
-    public AudioBus(string name, string routeTo)
-    {
-        Name = name;
-        RouteTo = routeTo;
-    }
-}
-
-public class AudioBusLayout
-{
-    public AudioBus Master { get; private set; } = new("Master");
 }

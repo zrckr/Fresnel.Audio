@@ -9,7 +9,7 @@ app.Run();
 
 internal sealed class PlaybackDemo : App
 {
-    private readonly PlaybackLayout _layout = new();
+    private readonly ExampleMixer _mixer = new();
 
     private AudioDevice _audio = null!;
 
@@ -32,15 +32,13 @@ internal sealed class PlaybackDemo : App
 
     protected override void Startup()
     {
-        _audio = new AudioDevice(this);
-        _audio.LoadLayout(_layout);
-
+        _audio = new AudioDevice(this, _mixer);
         using (var track = File.OpenRead(Path.Combine(AppContext.BaseDirectory, "Assets", "shortcuts.ogg")))
         {
-            _stream = new AudioStream(_audio, track, AudioLoadMode.Decoded);
+            _stream = new AudioStream(_audio, track);
         }
 
-        _player = new AudioPlayer(_audio, _stream, _layout.Music);
+        _player = new AudioPlayer(_audio, _stream, _mixer.Music);
         _player.Play();
         _renderer = new Renderer(this, Path.Combine(AppContext.BaseDirectory, "Assets", "monogram.ttf"));
     }
@@ -139,7 +137,7 @@ internal sealed class PlaybackDemo : App
                     SetPlayerGain(gain);
                 }
 
-                ImGui.Text($"Route: {_layout.Music.Name}");
+                ImGui.Text($"Route: {_mixer.Music.Name}");
                 ImGui.Text($"State: {state}");
                 ImGui.TreePop();
             }
@@ -150,18 +148,17 @@ internal sealed class PlaybackDemo : App
 
     private void DrawBusControls()
     {
-        var buses = new[] { _layout.Master, _layout.Music };
-        for (var index = 0; index < buses.Length; index++)
+        var index = 0;
+        foreach (var bus in _mixer.Buses.Values)
         {
-            var bus = buses[index];
-            var route = string.IsNullOrEmpty(bus.RouteTo) ? "output" : bus.RouteTo;
+            var route = bus.Parent?.Name ?? "output";
             ImGui.PushID(index);
             if (ImGui.TreeNode($"Bus: {bus.Name}"))
             {
-                var gain = ReferenceEquals(bus, _layout.Master) ? _masterGain : _musicGain;
+                var gain = ReferenceEquals(bus, _mixer.Master) ? _masterGain : _musicGain;
                 if (ImGui.SliderFloat("Gain", ref gain, -48f, 12f, "%.0f dB"))
                 {
-                    if (ReferenceEquals(bus, _layout.Master))
+                    if (ReferenceEquals(bus, _mixer.Master))
                     {
                         SetMasterGain(gain);
                     }
@@ -195,6 +192,7 @@ internal sealed class PlaybackDemo : App
             }
 
             ImGui.PopID();
+            index += 1;
         }
     }
 
@@ -231,26 +229,25 @@ internal sealed class PlaybackDemo : App
     private void SetMasterGain(float gain)
     {
         _masterGain = Math.Clamp(gain, -48f, 12f);
-        _layout.Master.Volume = new Db(_masterGain);
+        _mixer.Master.Volume = new Db(_masterGain);
     }
 
     private void SetMusicGain(float gain)
     {
         _musicGain = Math.Clamp(gain, -48f, 12f);
-        _layout.Music.Volume = new Db(_musicGain);
+        _mixer.Music.Volume = new Db(_musicGain);
     }
 
-    private sealed class PlaybackLayout : AudioBusLayout
+    private sealed class ExampleMixer : AudioMixer
     {
         public AudioBus Music { get; }
 
-        public PlaybackLayout()
+        public ExampleMixer()
         {
-            Master.Volume = Db.FromLinear(0.1f);
-            Music = new AudioBus("Music", () => Master)
+            Music = AddBus(nameof(Music), new AudioBusConfig
             {
-                Volume = Db.FromLinear(0.1f)
-            };
+                Volume = new Db(-12f)
+            });
         }
     }
 }

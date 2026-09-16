@@ -13,7 +13,7 @@ public sealed class AudioPlayer : IDisposable
                 Changed?.Invoke();
             }
         }
-    } = Db.Zero;
+    } = 0f;
 
     public int MaxPolyphony
     {

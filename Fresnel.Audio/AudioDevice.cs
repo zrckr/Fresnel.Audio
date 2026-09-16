@@ -4,111 +4,21 @@ namespace Fresnel.Audio;
 
 public sealed class AudioDevice : IDisposable
 {
+    private readonly AudioMixer _mixer;
+
     private readonly AudioDeviceSDL _device;
 
     private readonly Dictionary<AudioStream, StreamState> _streamStates = new();
 
     private readonly Dictionary<AudioPlayer, PlayerState> _playerStates = new();
 
-    private readonly Dictionary<AudioBus, BusState> _busStates = new();
-
     private bool _disposed;
 
-    public AudioDevice(App app)
+    public AudioDevice(App app, AudioMixer mixer)
     {
         _device = new AudioDeviceSDL(app);
-    }
-
-    public void LoadLayout(AudioBusLayout layout)
-    {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        if (_playerStates.Count != 0)
-        {
-            throw new InvalidOperationException("A bus layout cannot be changed while players exist.");
-        }
-
-        var buses = new Dictionary<string, AudioBus>();
-        foreach (var property in layout.GetType()
-                     .GetProperties(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public))
-        {
-            if (!typeof(AudioBus).IsAssignableFrom(property.PropertyType))
-            {
-                continue;
-            }
-
-            if (property.GetValue(layout) is not AudioBus bus)
-            {
-                throw new InvalidOperationException($"The '{property.Name}' bus is null.");
-            }
-
-            if (!buses.TryAdd(bus.Name, bus))
-            {
-                throw new InvalidOperationException($"The layout contains multiple buses named '{bus.Name}'.");
-            }
-        }
-
-        if (!buses.TryGetValue(layout.Master.Name, out var master) || !ReferenceEquals(master, layout.Master))
-        {
-            throw new InvalidOperationException("The layout master bus must be a public bus property.");
-        }
-
-        if (!string.IsNullOrEmpty(master.RouteTo))
-        {
-            throw new InvalidOperationException("The master bus must not route to another bus.");
-        }
-
-        var nodes = buses.Values.ToDictionary(bus => bus,
-            bus => new BusState { Bus = bus, ChangedHandler = BusChanged });
-
-        foreach (var bus in buses.Values)
-        {
-            var routeName = bus.RouteTo;
-            if (string.IsNullOrEmpty(routeName))
-            {
-                if (!ReferenceEquals(bus, master))
-                {
-                    throw new InvalidOperationException($"The '{bus.Name}' bus has no route.");
-                }
-
-                continue;
-            }
-
-            if (!buses.TryGetValue(routeName, out var parent))
-            {
-                throw new InvalidOperationException($"The '{bus.Name}' bus routes to unknown bus '{routeName}'.");
-            }
-
-            if (ReferenceEquals(bus, parent))
-            {
-                throw new InvalidOperationException($"The '{bus.Name}' bus cannot route to itself.");
-            }
-
-            nodes[bus].Parent = nodes[parent];
-        }
-
-        foreach (var bus in buses.Values)
-        {
-            var visited = new HashSet<BusState>();
-            for (var current = nodes[bus]; current != null; current = current.Parent)
-            {
-                if (!visited.Add(current))
-                {
-                    throw new InvalidOperationException($"The bus route containing '{bus.Name}' has a cycle.");
-                }
-            }
-        }
-
-        foreach (var node in _busStates.Values)
-        {
-            node.Bus.Changed -= node.ChangedHandler;
-        }
-
-        _busStates.Clear();
-        foreach (var pair in nodes)
-        {
-            pair.Key.Changed += pair.Value.ChangedHandler;
-            _busStates.Add(pair.Key, pair.Value);
-        }
+        _mixer = mixer;
+        _mixer.Changed += MixerChanged;
     }
 
     internal void CreateStream(AudioStream stream, ReadOnlySpan<byte> encodedData, AudioLoadMode mode)
@@ -151,19 +61,14 @@ public sealed class AudioDevice : IDisposable
             stream.DisposeFromDevice();
         }
 
-        foreach (var node in _busStates.Values)
-        {
-            node.Bus.Changed -= node.ChangedHandler;
-        }
-
-        _busStates.Clear();
+        _mixer.Changed -= MixerChanged;
         _device.Dispose();
         _disposed = true;
     }
 
     internal void CreatePlayer(AudioPlayer player, AudioBus bus)
     {
-        if (!_busStates.ContainsKey(bus))
+        if (!ReferenceEquals(bus.Mixer, _mixer))
         {
             throw new ArgumentException("The bus does not belong to this audio device.", nameof(bus));
         }
@@ -172,11 +77,6 @@ public sealed class AudioDevice : IDisposable
         player.Changed += changedHandler;
         GetStream(player.AudioStream).Players.Add(player);
         _playerStates.Add(player, new PlayerState { Owner = player, Bus = bus, ChangedHandler = changedHandler });
-    }
-
-    internal AudioBus GetPlayerBus(AudioPlayer player)
-    {
-        return GetPlayer(player).Bus;
     }
 
     internal bool IsPlayerPlaying(AudioPlayer player)
@@ -254,7 +154,7 @@ public sealed class AudioDevice : IDisposable
         }
     }
 
-    private void BusChanged()
+    private void MixerChanged()
     {
         foreach (var player in _playerStates.Values)
         {
@@ -321,8 +221,8 @@ public sealed class AudioDevice : IDisposable
 
     private void ApplyRouting(AudioPlayer player, Playback playback)
     {
-        var output = GetOutput(GetPlayer(player).Bus);
-        playback.Track.SetOutput(player.Volume.ToLinear() * output.Gain, output.Left, output.Right);
+        var output = _mixer.GetOutput(GetPlayer(player).Bus);
+        playback.Track.SetOutput(player.Volume.ToLinear() * output.Volume, output.Left, output.Right);
     }
 
     private static void ApplyStreamOptions(PlayerState player)
@@ -337,33 +237,6 @@ public sealed class AudioDevice : IDisposable
     {
         playback.Track.SetPlaybackRate(player.AudioStream.PlaybackRate);
         playback.Track.SetLooping(player.AudioStream.Looping);
-    }
-
-    private (float Gain, float Left, float Right) GetOutput(AudioBus bus)
-    {
-        var anySolo = _busStates.Values.Any(it => it.Bus.Solo);
-        var inSoloSubtree = false;
-        var muted = false;
-        var gain = 1f;
-        var left = 1f;
-        var right = 1f;
-
-        for (var current = _busStates[bus]; current != null; current = current.Parent)
-        {
-            var currentBus = current.Bus;
-            inSoloSubtree |= currentBus.Solo;
-            muted |= currentBus.Muted;
-            gain *= currentBus.Volume.ToLinear();
-            left *= 1f - Math.Max(currentBus.Pan, 0f);
-            right *= 1f + Math.Min(currentBus.Pan, 0f);
-        }
-
-        if (muted || (anySolo && !inSoloSubtree))
-        {
-            gain = 0f;
-        }
-
-        return (gain, left, right);
     }
 
     private sealed class StreamState
@@ -385,12 +258,5 @@ public sealed class AudioDevice : IDisposable
     {
         public readonly AudioDeviceSDL.TrackResource Track = track;
         public long Sequence;
-    }
-
-    private sealed class BusState
-    {
-        public required AudioBus Bus;
-        public required Action ChangedHandler;
-        public BusState? Parent;
     }
 }
