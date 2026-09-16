@@ -1,4 +1,5 @@
 using Foster.Framework;
+using System.Runtime.InteropServices;
 
 namespace Fresnel.Audio;
 
@@ -17,21 +18,16 @@ public sealed class AudioStream : IDisposable
     private bool _disposed;
 
     public AudioStream(Audio audio, StorageContainer storage, string path, AudioLoadMode mode = AudioLoadMode.Decoded)
-        : this(audio, ReadStorage(storage, path), mode)
+        : this(audio, ReadStorage(storage, path).Span, mode)
     {
     }
 
     public AudioStream(Audio audio, Stream source, AudioLoadMode mode = AudioLoadMode.Decoded)
-        : this(audio, ReadAllBytes(source), mode)
+        : this(audio, ReadAllBytes(source).Span, mode)
     {
     }
 
     public AudioStream(Audio audio, ReadOnlySpan<byte> encodedData, AudioLoadMode mode = AudioLoadMode.Decoded)
-        : this(audio, encodedData.ToArray(), mode)
-    {
-    }
-
-    private AudioStream(Audio audio, byte[] encodedData, AudioLoadMode mode)
     {
         ArgumentNullException.ThrowIfNull(audio);
         _device = audio.Device;
@@ -43,7 +39,7 @@ public sealed class AudioStream : IDisposable
         if (Qoa.IsQoa(encodedData))
         {
             var decoded = Qoa.Decode(encodedData);
-            return _device.StreamCreateRaw(decoded.Pcm, decoded.Channels, decoded.SampleRate);
+            return _device.StreamCreateRaw(MemoryMarshal.AsBytes(decoded.Pcm.AsSpan()), decoded.Channels, decoded.SampleRate);
         }
 
         return _device.StreamCreate(encodedData, mode);
@@ -78,16 +74,26 @@ public sealed class AudioStream : IDisposable
         }
     }
 
-    private static byte[] ReadStorage(StorageContainer storage, string path)
+    private static ReadOnlyMemory<byte> ReadStorage(StorageContainer storage, string path)
     {
         using var source = storage.OpenRead(path);
         return ReadAllBytes(source);
     }
 
-    private static byte[] ReadAllBytes(Stream source)
+    private static ReadOnlyMemory<byte> ReadAllBytes(Stream source)
     {
+        if (source.CanSeek)
+        {
+            var remaining = Math.Max(0, source.Length - source.Position);
+            var bytes = new byte[checked((int)remaining)];
+            source.ReadExactly(bytes);
+            return bytes;
+        }
+
         using var buffer = new MemoryStream();
         source.CopyTo(buffer);
-        return buffer.ToArray();
+
+        // Disposing MemoryStream leaves its managed buffer valid for synchronous loading.
+        return buffer.GetBuffer().AsMemory(0, checked((int)buffer.Length));
     }
 }

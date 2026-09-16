@@ -58,6 +58,11 @@ internal static class Qoa
         var frameOffset = 8;
         var outputOffset = 0;
         var decodedSamples = 0;
+        var lmses = new Lms[channels];
+        for (var channel = 0; channel < channels; channel++)
+        {
+            lmses[channel] = new Lms();
+        }
 
         while (decodedSamples < totalSamples)
         {
@@ -80,11 +85,10 @@ internal static class Qoa
             }
 
             var frame = encoded.Slice(frameOffset, frameBytes);
-            var lmses = new Lms[channels];
             var cursor = 8;
             for (var channel = 0; channel < channels; channel++)
             {
-                lmses[channel] = new Lms(frame.Slice(cursor, 16));
+                lmses[channel].Reset(frame.Slice(cursor, 16));
                 cursor += 16;
             }
 
@@ -105,8 +109,7 @@ internal static class Qoa
                         }
 
                         var dequantized = Dequantize(quantized, scaleFactor);
-                        var reconstructed = Math.Clamp(lmses[channel].Predict() + dequantized, short.MinValue,
-                            short.MaxValue);
+                        var reconstructed = Math.Clamp(lmses[channel].Predict() + dequantized, short.MinValue, short.MaxValue);
                         lmses[channel].Update(reconstructed, dequantized);
                         samples[outputOffset + ((sampleIndex + sample) * channels) + channel] = (short)reconstructed;
                     }
@@ -123,8 +126,7 @@ internal static class Qoa
             throw new ArgumentException("The QOA file has trailing data.", (Exception?)null);
         }
 
-        return new DecodedAudio(System.Runtime.InteropServices.MemoryMarshal.AsBytes(samples.AsSpan()).ToArray(),
-            channels, sampleRate);
+        return new DecodedAudio(samples, channels, sampleRate);
     }
 
     private static int Dequantize(int quantized, int scaleFactor)
@@ -139,7 +141,7 @@ internal static class Qoa
         return (quantized & 1) != 0 ? -dequantized : dequantized;
     }
 
-    internal readonly record struct DecodedAudio(byte[] Pcm, int Channels, int SampleRate);
+    internal readonly record struct DecodedAudio(short[] Pcm, int Channels, int SampleRate);
 
     private sealed class Lms
     {
@@ -147,7 +149,7 @@ internal static class Qoa
 
         private readonly int[] _weights = new int[4];
 
-        internal Lms(ReadOnlySpan<byte> data)
+        internal void Reset(ReadOnlySpan<byte> data)
         {
             for (var i = 0; i < 4; i++)
             {
