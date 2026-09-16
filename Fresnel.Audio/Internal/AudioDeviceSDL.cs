@@ -99,6 +99,36 @@ internal sealed unsafe class AudioDeviceSDL : AudioDevice
         }
     }
 
+    internal override ResourceHandle StreamCreateRaw(ReadOnlySpan<byte> bytes, int channels, int sampleRate)
+    {
+        ObjectDisposedException.ThrowIf(_mixer == null, this);
+        if (bytes.IsEmpty)
+        {
+            throw new ArgumentException("Audio data must not be empty.", nameof(bytes));
+        }
+
+        var spec = new SDL3.SDL.SDL_AudioSpec
+        {
+            format = BitConverter.IsLittleEndian
+                ? SDL3.SDL.SDL_AudioFormat.SDL_AUDIO_S16LE
+                : SDL3.SDL.SDL_AudioFormat.SDL_AUDIO_S16BE,
+            channels = channels,
+            freq = sampleRate
+        };
+
+        fixed (byte* data = bytes)
+        {
+            var stream = SDL3.SDL3_Mixer.LoadRawAudio(_mixer, data, (nuint)bytes.Length, &spec);
+            if (stream == null)
+            {
+                throw Error(nameof(SDL3.SDL3_Mixer.LoadRawAudio));
+            }
+
+            _streams.Add((nint)stream);
+            return new ResourceHandle((nint)stream);
+        }
+    }
+
     internal override TimeSpan? StreamGetDuration(ResourceHandle handle)
     {
         var stream = GetStream(handle);

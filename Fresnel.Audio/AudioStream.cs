@@ -35,7 +35,18 @@ public sealed class AudioStream : IDisposable
     {
         ArgumentNullException.ThrowIfNull(audio);
         _device = audio.Device;
-        Handle = _device.StreamCreate(encodedData, mode);
+        Handle = CreateStream(encodedData, mode);
+    }
+
+    private AudioDevice.ResourceHandle CreateStream(ReadOnlySpan<byte> encodedData, AudioLoadMode mode)
+    {
+        if (Qoa.IsQoa(encodedData))
+        {
+            var decoded = Qoa.Decode(encodedData);
+            return _device.StreamCreateRaw(decoded.Pcm, decoded.Channels, decoded.SampleRate);
+        }
+
+        return _device.StreamCreate(encodedData, mode);
     }
 
     public AudioPlayer CreatePlayer(AudioBus bus)

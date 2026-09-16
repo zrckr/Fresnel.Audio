@@ -17,6 +17,8 @@
   <ItemGroup>
     <None Update="Assets\monogram.ttf" CopyToOutputDirectory="PreserveNewest" />
     <None Update="Assets\shortcuts.ogg" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="Assets\action_drop_coin_01.wav" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="Assets\bounce_cartoony_03.qoa" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

@@ -13,9 +13,17 @@ internal sealed class PlaybackDemo : App
 
     private Audio _audio = null!;
 
-    private AudioStream _stream = null!;
+    private AudioStream _songStream = null!;
 
-    private AudioPlayer _player = null!;
+    private AudioPlayer _songPlayer = null!;
+
+    private AudioStream _coinStream = null!;
+
+    private AudioPlayer _coinPlayer = null!;
+
+    private AudioStream _bounceStream = null!;
+
+    private AudioPlayer _bouncePlayer = null!;
 
     private Renderer _renderer = null!;
 
@@ -37,13 +45,17 @@ internal sealed class PlaybackDemo : App
     protected override void Startup()
     {
         _audio = new Audio(this);
-        using (var track = File.OpenRead(Path.Combine(AppContext.BaseDirectory, "Assets", "shortcuts.ogg")))
-        {
-            _stream = new AudioStream(_audio, track);
-        }
+        _songStream = LoadStream("shortcuts.ogg");
+        _songPlayer = _songStream.CreatePlayer(_mixer.Music);
 
-        _player = _stream.CreatePlayer(_mixer.Music);
-        _player.Play();
+        _coinStream = LoadStream("action_drop_coin_01.wav");
+        _coinPlayer = _coinStream.CreatePlayer(_mixer.Sfx);
+        _coinPlayer.MaxVoices = 4;
+
+        _bounceStream = LoadStream("bounce_cartoony_03.qoa");
+        _bouncePlayer = _bounceStream.CreatePlayer(_mixer.Sfx);
+        _bouncePlayer.MaxVoices = 4;
+
         _renderer = new Renderer(this, Path.Combine(AppContext.BaseDirectory, "Assets", "monogram.ttf"));
     }
 
@@ -63,47 +75,74 @@ internal sealed class PlaybackDemo : App
     protected override void Shutdown()
     {
         _renderer.Dispose();
-        _player.Dispose();
-        _stream.Dispose();
+        _bouncePlayer.Dispose();
+        _bounceStream.Dispose();
+        _coinPlayer.Dispose();
+        _coinStream.Dispose();
+        _songPlayer.Dispose();
+        _songStream.Dispose();
         _audio.Dispose();
     }
 
     private void DrawAudioControls()
     {
         ImGui.SetNextWindowPos(new Vector2(12, 12), ImGuiCond.FirstUseEver);
-        ImGui.SetNextWindowSize(new Vector2(426, 286), ImGuiCond.FirstUseEver);
+        ImGui.SetNextWindowSize(new Vector2(426, 430), ImGuiCond.FirstUseEver);
         ImGui.Begin("Fresnel.Audio playback demo");
 
         ImGui.Text("Shortcuts - Zane Little Music");
-        ImGui.Text($"Duration: {_stream.Duration?.ToString(@"m\:ss\.ff") ?? "unknown"}");
+        ImGui.Text($"Duration: {_songStream.Duration?.ToString(@"m\:ss\.ff") ?? "unknown"}");
         ImGui.Separator();
 
         DrawPlayerControls();
+        DrawOneShotControls();
         DrawBusControls();
         ImGui.End();
+    }
+
+    private void DrawOneShotControls()
+    {
+        ImGui.Separator();
+        ImGui.Text("One-shot effects");
+
+        if (ImGui.Button("Play WAV: Coin drop"))
+        {
+            _coinPlayer.Play();
+        }
+
+        ImGui.SameLine();
+        ImGui.TextDisabled($"Voices: {_coinPlayer.ActiveVoices.ToString()}");
+
+        if (ImGui.Button("Play QOA: Cartoony bounce"))
+        {
+            _bouncePlayer.Play();
+        }
+
+        ImGui.SameLine();
+        ImGui.TextDisabled($"Voices: {_bouncePlayer.ActiveVoices.ToString()}");
     }
 
     private void DrawPlayerControls()
     {
         var index = 0;
-        foreach (var player in _stream.Players)
+        foreach (var player in _songStream.Players)
         {
             ImGui.PushID(index);
             if (ImGui.TreeNode($"Player {index + 1}: Shortcuts"))
             {
                 if (ImGui.Button(player.State == AudioPlayer.PlaybackState.Playing ? "Pause" : "Play"))
                 {
-                    if (_player.State == AudioPlayer.PlaybackState.Stopped)
+                    if (_songPlayer.State == AudioPlayer.PlaybackState.Stopped)
                     {
-                        _player.Play();
+                        _songPlayer.Play();
                     }
-                    else if (_player.State == AudioPlayer.PlaybackState.Paused)
+                    else if (_songPlayer.State == AudioPlayer.PlaybackState.Paused)
                     {
-                        _player.Resume();
+                        _songPlayer.Resume();
                     }
                     else
                     {
-                        _player.Pause();
+                        _songPlayer.Pause();
                     }
                 }
 
@@ -112,6 +151,9 @@ internal sealed class PlaybackDemo : App
                 {
                     player.Stop();
                 }
+
+                ImGui.SameLine();
+                ImGui.TextDisabled($"Voices: {player.ActiveVoices.ToString()}");
 
                 var looping = player.Looping;
                 if (ImGui.Checkbox("Loop", ref looping))
@@ -139,7 +181,7 @@ internal sealed class PlaybackDemo : App
                     player.PlaybackRate = rate;
                 }
 
-                if (_stream.Duration is { } duration)
+                if (_songStream.Duration is { } duration)
                 {
                     if (!_scrubbing)
                     {
@@ -166,7 +208,7 @@ internal sealed class PlaybackDemo : App
                 if (ImGui.SliderFloat("Volume", ref volume, -48f, 12f, "%.0f dB"))
                 {
                     _playerGain = Math.Clamp(volume, -48f, 12f);
-                    _player.Volume = new Db(_playerGain);
+                    _songPlayer.Volume = new Db(_playerGain);
                 }
 
                 ImGui.TreePop();
@@ -229,15 +271,28 @@ internal sealed class PlaybackDemo : App
         }
     }
 
+    private AudioStream LoadStream(string filename)
+    {
+        using var source = File.OpenRead(Path.Combine(AppContext.BaseDirectory, "Assets", filename));
+        return new AudioStream(_audio, source);
+    }
+
     private sealed class ExampleMixer : AudioMixer
     {
         public AudioBus Music { get; }
+
+        public AudioBus Sfx { get; }
 
         public ExampleMixer()
         {
             Music = AddBus(nameof(Music), new AudioBusConfig
             {
-                Volume = new Db(-12f)
+                Volume = -12f
+            });
+
+            Sfx = AddBus(nameof(Sfx), new AudioBusConfig
+            {
+                Volume = -6f
             });
         }
     }

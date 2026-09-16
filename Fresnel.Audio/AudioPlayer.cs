@@ -96,6 +96,8 @@ public sealed class AudioPlayer : IDisposable
 
     public bool IsDisposed { get; private set; }
 
+    public int ActiveVoices => _tracks.Count(track => _device.TrackIsActive(track.Handle));
+
     private readonly AudioStream _stream;
 
     private readonly AudioBus _bus;

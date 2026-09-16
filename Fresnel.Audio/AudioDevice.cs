@@ -6,6 +6,8 @@ internal abstract class AudioDevice : IDisposable
 
     internal abstract ResourceHandle StreamCreate(ReadOnlySpan<byte> bytes, AudioLoadMode mode);
 
+    internal abstract ResourceHandle StreamCreateRaw(ReadOnlySpan<byte> bytes, int channels, int sampleRate);
+
     internal abstract TimeSpan? StreamGetDuration(ResourceHandle streamHandle);
 
     internal abstract void StreamDestroy(ResourceHandle streamHandle);
