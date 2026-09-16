@@ -11,7 +11,7 @@ internal sealed class PlaybackDemo : App
 {
     private readonly ExampleMixer _mixer = new();
 
-    private AudioDevice _audio = null!;
+    private Audio _audio = null!;
 
     private AudioStream _stream = null!;
 
@@ -19,11 +19,15 @@ internal sealed class PlaybackDemo : App
 
     private Renderer _renderer = null!;
 
-    private float _masterGain = -20f;
+    private Db _masterGain = -20f;
 
-    private float _playerGain;
+    private Db _playerGain;
 
-    private float _musicGain = -20f;
+    private Db _musicGain = -20f;
+
+    private float _scrubPosition;
+
+    private bool _scrubbing;
 
     public PlaybackDemo()
         : base(new AppConfig("Fresnel.Sample", "Fresnel.Audio playback demo", 1280, 720))
@@ -32,13 +36,13 @@ internal sealed class PlaybackDemo : App
 
     protected override void Startup()
     {
-        _audio = new AudioDevice(this, _mixer);
+        _audio = new Audio(this);
         using (var track = File.OpenRead(Path.Combine(AppContext.BaseDirectory, "Assets", "shortcuts.ogg")))
         {
             _stream = new AudioStream(_audio, track);
         }
 
-        _player = new AudioPlayer(_audio, _stream, _mixer.Music);
+        _player = _stream.CreatePlayer(_mixer.Music);
         _player.Play();
         _renderer = new Renderer(this, Path.Combine(AppContext.BaseDirectory, "Assets", "monogram.ttf"));
     }
@@ -81,17 +85,26 @@ internal sealed class PlaybackDemo : App
 
     private void DrawPlayerControls()
     {
-        var players = new[] { _player };
-        for (var index = 0; index < players.Length; index++)
+        var index = 0;
+        foreach (var player in _stream.Players)
         {
-            var player = players[index];
-            var state = !player.Playing ? "stopped" : player.StreamPaused ? "paused" : "playing";
             ImGui.PushID(index);
             if (ImGui.TreeNode($"Player {index + 1}: Shortcuts"))
             {
-                if (ImGui.Button(player.Playing ? "Play / Pause" : "Play"))
+                if (ImGui.Button(player.State == AudioPlayer.PlaybackState.Playing ? "Pause" : "Play"))
                 {
-                    TogglePlayback();
+                    if (_player.State == AudioPlayer.PlaybackState.Stopped)
+                    {
+                        _player.Play();
+                    }
+                    else if (_player.State == AudioPlayer.PlaybackState.Paused)
+                    {
+                        _player.Resume();
+                    }
+                    else
+                    {
+                        _player.Pause();
+                    }
                 }
 
                 ImGui.SameLine();
@@ -100,49 +113,67 @@ internal sealed class PlaybackDemo : App
                     player.Stop();
                 }
 
-                ImGui.SameLine();
-                if (ImGui.Button("Restart"))
-                {
-                    Restart();
-                }
-
-                ImGui.SameLine();
-                if (ImGui.Button("Midpoint"))
-                {
-                    PlayFromMidpoint();
-                }
-
-                var looping = _stream.Looping;
+                var looping = player.Looping;
                 if (ImGui.Checkbox("Loop", ref looping))
                 {
-                    _stream.Looping = looping;
+                    player.Looping = looping;
                 }
 
                 ImGui.SameLine();
-                var paused = player.StreamPaused;
+                var paused = player.State == AudioPlayer.PlaybackState.Paused;
                 if (ImGui.Checkbox("Paused", ref paused))
                 {
-                    player.StreamPaused = paused;
+                    if (paused)
+                    {
+                        player.Pause();
+                    }
+                    else
+                    {
+                        player.Resume();
+                    }
                 }
 
-                var rate = _stream.PlaybackRate;
+                var rate = player.PlaybackRate;
                 if (ImGui.SliderFloat("Playback rate", ref rate, .25f, 4f, "%.2fx"))
                 {
-                    _stream.PlaybackRate = rate;
+                    player.PlaybackRate = rate;
                 }
 
-                var gain = _playerGain;
-                if (ImGui.SliderFloat("Gain", ref gain, -48f, 12f, "%.0f dB"))
+                if (_stream.Duration is { } duration)
                 {
-                    SetPlayerGain(gain);
+                    if (!_scrubbing)
+                    {
+                        _scrubPosition = (float)Math.Clamp(player.Position.TotalSeconds, 0, duration.TotalSeconds);
+                    }
+
+                    ImGui.SliderFloat("Position", ref _scrubPosition, 0, (float)duration.TotalSeconds, "%.2fs");
+                    if (ImGui.IsItemDeactivatedAfterEdit())
+                    {
+                        player.Position = TimeSpan.FromSeconds(_scrubPosition);
+                        _scrubbing = false;
+                    }
+                    else if (ImGui.IsItemDeactivated())
+                    {
+                        _scrubbing = false;
+                    }
+                    else if (ImGui.IsItemActive())
+                    {
+                        _scrubbing = true;
+                    }
                 }
 
-                ImGui.Text($"Route: {_mixer.Music.Name}");
-                ImGui.Text($"State: {state}");
+                float volume = _playerGain;
+                if (ImGui.SliderFloat("Volume", ref volume, -48f, 12f, "%.0f dB"))
+                {
+                    _playerGain = Math.Clamp(volume, -48f, 12f);
+                    _player.Volume = new Db(_playerGain);
+                }
+
                 ImGui.TreePop();
             }
 
             ImGui.PopID();
+            index += 1;
         }
     }
 
@@ -151,20 +182,22 @@ internal sealed class PlaybackDemo : App
         var index = 0;
         foreach (var bus in _mixer.Buses.Values)
         {
-            var route = bus.Parent?.Name ?? "output";
+            var route = bus.Parent?.Name ?? "Speakers";
             ImGui.PushID(index);
             if (ImGui.TreeNode($"Bus: {bus.Name}"))
             {
-                var gain = ReferenceEquals(bus, _mixer.Master) ? _masterGain : _musicGain;
-                if (ImGui.SliderFloat("Gain", ref gain, -48f, 12f, "%.0f dB"))
+                float volume = ReferenceEquals(bus, _mixer.Master) ? _masterGain : _musicGain;
+                if (ImGui.SliderFloat("Volume", ref volume, -48f, 12f, "%.0f dB"))
                 {
                     if (ReferenceEquals(bus, _mixer.Master))
                     {
-                        SetMasterGain(gain);
+                        _masterGain = Math.Clamp(volume, -48f, 12f);
+                        _mixer.Master.Volume = new Db(_masterGain);
                     }
                     else
                     {
-                        SetMusicGain(gain);
+                        _musicGain = Math.Clamp(volume, -48f, 12f);
+                        _mixer.Music.Volume = new Db(_musicGain);
                     }
                 }
 
@@ -194,48 +227,6 @@ internal sealed class PlaybackDemo : App
             ImGui.PopID();
             index += 1;
         }
-    }
-
-    private void TogglePlayback()
-    {
-        if (!_player.Playing)
-        {
-            _player.Play();
-        }
-        else
-        {
-            _player.StreamPaused = !_player.StreamPaused;
-        }
-    }
-
-    private void Restart()
-    {
-        _player.Stop();
-        _player.StreamPaused = false;
-        _player.Play();
-    }
-
-    private void PlayFromMidpoint()
-    {
-        _player.Play((_stream.Duration ?? TimeSpan.Zero) / 2);
-    }
-
-    private void SetPlayerGain(float gain)
-    {
-        _playerGain = Math.Clamp(gain, -48f, 12f);
-        _player.Volume = new Db(_playerGain);
-    }
-
-    private void SetMasterGain(float gain)
-    {
-        _masterGain = Math.Clamp(gain, -48f, 12f);
-        _mixer.Master.Volume = new Db(_masterGain);
-    }
-
-    private void SetMusicGain(float gain)
-    {
-        _musicGain = Math.Clamp(gain, -48f, 12f);
-        _mixer.Music.Volume = new Db(_musicGain);
     }
 
     private sealed class ExampleMixer : AudioMixer

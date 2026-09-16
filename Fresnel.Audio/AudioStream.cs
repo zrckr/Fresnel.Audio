@@ -4,84 +4,66 @@ namespace Fresnel.Audio;
 
 public sealed class AudioStream : IDisposable
 {
-    public TimeSpan? Duration
-    {
-        get
-        {
-            return _device.GetDuration(this);
-        }
-    }
+    public TimeSpan? Duration => _device.StreamGetDuration(Handle);
 
-    public float PlaybackRate
-    {
-        get;
-        set
-        {
-            if (!float.IsFinite(value) || value <= 0f)
-            {
-                throw new ArgumentOutOfRangeException(nameof(value), "Playback rate must be finite and positive.");
-            }
+    public IReadOnlyCollection<AudioPlayer> Players => _players;
 
-            if (Math.Abs(field - value) > float.Epsilon)
-            {
-                field = value;
-                Changed?.Invoke();
-            }
-        }
-    } = 1f;
-
-    public bool Looping
-    {
-        get;
-        set
-        {
-            if (field != value)
-            {
-                field = value;
-                Changed?.Invoke();
-            }
-        }
-    }
-
-    public bool IsDisposed { get; private set; }
-
-    internal event Action? Changed;
+    internal AudioDevice.ResourceHandle Handle { get; }
 
     private readonly AudioDevice _device;
 
-    public AudioStream(AudioDevice device, StorageContainer storage, string path,
-        AudioLoadMode mode = AudioLoadMode.Decoded)
-        : this(device, ReadStorage(storage, path), mode)
+    private readonly HashSet<AudioPlayer> _players = new();
+
+    private bool _disposed;
+
+    public AudioStream(Audio audio, StorageContainer storage, string path, AudioLoadMode mode = AudioLoadMode.Decoded)
+        : this(audio, ReadStorage(storage, path), mode)
     {
     }
 
-    public AudioStream(AudioDevice device, Stream source, AudioLoadMode mode = AudioLoadMode.Decoded)
-        : this(device, ReadAllBytes(source), mode)
+    public AudioStream(Audio audio, Stream source, AudioLoadMode mode = AudioLoadMode.Decoded)
+        : this(audio, ReadAllBytes(source), mode)
     {
     }
 
-    public AudioStream(AudioDevice device, ReadOnlySpan<byte> encodedData, AudioLoadMode mode = AudioLoadMode.Decoded)
-        : this(device, encodedData.ToArray(), mode)
+    public AudioStream(Audio audio, ReadOnlySpan<byte> encodedData, AudioLoadMode mode = AudioLoadMode.Decoded)
+        : this(audio, encodedData.ToArray(), mode)
     {
     }
 
-    private AudioStream(AudioDevice device, byte[] encodedData, AudioLoadMode mode)
+    private AudioStream(Audio audio, byte[] encodedData, AudioLoadMode mode)
     {
-        _device = device;
-        _device.CreateStream(this, encodedData, mode);
+        ArgumentNullException.ThrowIfNull(audio);
+        _device = audio.Device;
+        Handle = _device.StreamCreate(encodedData, mode);
+    }
+
+    public AudioPlayer CreatePlayer(AudioBus bus)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        var player = new AudioPlayer(_device, this, bus);
+        _players.Add(player);
+        return player;
+    }
+
+    internal void RemovePlayer(AudioPlayer player)
+    {
+        ObjectDisposedException.ThrowIf(player.IsDisposed, player);
+        _players.Remove(player);
     }
 
     public void Dispose()
     {
-        DisposeFromDevice();
-    }
-
-    internal void DisposeFromDevice()
-    {
-        if (!IsDisposed)
+        if (!_disposed)
         {
-            _device.DisposeStream(this);
-            IsDisposed = true;
+            foreach (var player in _players.ToArray())
+            {
+                player.Dispose();
+            }
+
+            _players.Clear();
+            _device.StreamDestroy(Handle);
+            _disposed = true;
         }
     }
 

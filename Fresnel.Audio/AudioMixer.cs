@@ -43,7 +43,7 @@ public class AudioMixer
         Changed?.Invoke();
     }
 
-    internal BusOutput GetOutput(AudioBus bus)
+    internal (float Volume, float Left, float Right) GetMixedOutput(AudioBus bus)
     {
         if (!ReferenceEquals(bus.Mixer, this))
         {
@@ -76,8 +76,6 @@ public class AudioMixer
             volume = 0f;
         }
 
-        return new BusOutput(volume, left, right);
+        return (volume, left, right);
     }
-
-    internal readonly record struct BusOutput(float Volume, float Left, float Right);
 }
