@@ -259,18 +259,31 @@ internal sealed unsafe class AudioDeviceSDL : AudioDevice
         }
     }
 
-    internal override void TrackSetOutput(ResourceHandle handle, float gain, float left, float right)
+    internal override void TrackSetGain(ResourceHandle handle, float gain)
     {
         var track = GetTrack(handle);
         if (!SDL3.SDL3_Mixer.SetTrackGain(track, gain))
         {
             throw Error(nameof(SDL3.SDL3_Mixer.SetTrackGain));
         }
+    }
 
+    internal override void TrackSetStereo(ResourceHandle handle, float left, float right)
+    {
+        var track = GetTrack(handle);
         var stereo = new SDL3.SDL3_Mixer.StereoGains { Left = left, Right = right };
         if (!SDL3.SDL3_Mixer.SetTrackStereo(track, &stereo))
         {
             throw Error(nameof(SDL3.SDL3_Mixer.SetTrackStereo));
+        }
+    }
+
+    internal override void TrackSet3DPosition(ResourceHandle handle, float x, float y, float z)
+    {
+        var position = new SDL3.SDL3_Mixer.Point3D { X = x, Y = y, Z = z };
+        if (SDL3.SDL3_Mixer.SetTrack3DPosition(GetTrack(handle), &position) == 0)
+        {
+            throw Error(nameof(SDL3.SDL3_Mixer.SetTrack3DPosition));
         }
     }
 

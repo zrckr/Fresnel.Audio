@@ -32,7 +32,11 @@ internal abstract class AudioDevice : IDisposable
 
     internal abstract void TrackSetLooping(ResourceHandle trackHandle, bool looping);
 
-    internal abstract void TrackSetOutput(ResourceHandle trackHandle, float gain, float left, float right);
+    internal abstract void TrackSetGain(ResourceHandle trackHandle, float gain);
+
+    internal abstract void TrackSetStereo(ResourceHandle trackHandle, float left, float right);
+
+    internal abstract void TrackSet3DPosition(ResourceHandle trackHandle, float x, float y, float z);
 
     internal abstract void TrackSetPaused(ResourceHandle trackHandle, bool paused);
 

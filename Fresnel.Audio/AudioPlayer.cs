@@ -1,3 +1,5 @@
+using System.Numerics;
+
 namespace Fresnel.Audio;
 
 public sealed class AudioPlayer : IDisposable
@@ -94,6 +96,25 @@ public sealed class AudioPlayer : IDisposable
         }
     }
 
+    public AudioSpatial Spatial
+    {
+        get => _spatial;
+        set
+        {
+            if (!ReferenceEquals(_spatial, value))
+            {
+                var outputChanged = !_spatial.Equals(value);
+                _spatial.Changed -= UpdateTrackStates;
+                _spatial = value;
+                _spatial.Changed += UpdateTrackStates;
+                if (outputChanged)
+                {
+                    UpdateTrackStates();
+                }
+            }
+        }
+    }
+
     public bool IsDisposed { get; private set; }
 
     public int ActiveVoices => _tracks.Count(track => _device.TrackIsActive(track.Handle));
@@ -104,16 +125,23 @@ public sealed class AudioPlayer : IDisposable
 
     private readonly AudioDevice _device;
 
+    private readonly AudioListener _listener;
+
+    private AudioSpatial _spatial = new AudioSpatial.None();
+
     private readonly List<Track> _tracks = new();
 
     private long _nextSequence;
 
-    internal AudioPlayer(AudioDevice device, AudioStream stream, AudioBus bus)
+    internal AudioPlayer(AudioDevice device, AudioListener listener, AudioStream stream, AudioBus bus)
     {
         _device = device;
+        _listener = listener;
         _stream = stream;
         _bus = bus;
         _bus.Mixer.Changed += UpdateTrackStates;
+        _listener.Changed += UpdateTrackStates;
+        _spatial.Changed += UpdateTrackStates;
     }
 
     public void Dispose()
@@ -128,6 +156,8 @@ public sealed class AudioPlayer : IDisposable
             _tracks.Clear();
             _stream.RemovePlayer(this);
             _bus.Mixer.Changed -= UpdateTrackStates;
+            _listener.Changed -= UpdateTrackStates;
+            _spatial.Changed -= UpdateTrackStates;
             IsDisposed = true;
         }
     }
@@ -245,7 +275,37 @@ public sealed class AudioPlayer : IDisposable
         var (volume, left, right) = _bus.Mixer.GetMixedOutput(_bus);
         _device.TrackSetPlaybackRate(track.Handle, PlaybackRate);
         _device.TrackSetLooping(track.Handle, Looping);
-        _device.TrackSetOutput(track.Handle, Volume.ToLinear() * volume, left, right);
+        _device.TrackSetGain(track.Handle, Volume.ToLinear() * volume);
+
+        if (GetSpatialPosition() is { } position)
+        {
+            _device.TrackSet3DPosition(track.Handle, position.X, position.Y, position.Z);
+        }
+        else
+        {
+            _device.TrackSetStereo(track.Handle, left, right);
+        }
+    }
+
+    private Vector3? GetSpatialPosition()
+    {
+        var worldPosition = _spatial switch
+        {
+            AudioSpatial.None => default,
+            AudioSpatial.Spatial2D spatial => new Vector3(spatial.Position.X, 0f, spatial.Position.Y),
+            AudioSpatial.Spatial3D spatial => spatial.Position,
+            _ => throw new InvalidOperationException("Unknown audio spatial mode.")
+        };
+
+        if (_spatial is AudioSpatial.None)
+        {
+            return null;
+        }
+
+        var rotation = Quaternion.Inverse(_listener.Rotation);
+        var position = Vector3.Transform(worldPosition - _listener.Position, rotation) / _listener.ReferenceDistance;
+
+        return position;
     }
 
 

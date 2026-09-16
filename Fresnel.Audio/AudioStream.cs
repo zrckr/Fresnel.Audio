@@ -13,6 +13,8 @@ public sealed class AudioStream : IDisposable
 
     private readonly AudioDevice _device;
 
+    private readonly AudioListener _listener;
+
     private readonly HashSet<AudioPlayer> _players = new();
 
     private bool _disposed;
@@ -29,8 +31,8 @@ public sealed class AudioStream : IDisposable
 
     public AudioStream(Audio audio, ReadOnlySpan<byte> encodedData, AudioLoadMode mode = AudioLoadMode.Decoded)
     {
-        ArgumentNullException.ThrowIfNull(audio);
         _device = audio.Device;
+        _listener = audio.Listener;
         Handle = CreateStream(encodedData, mode);
     }
 
@@ -48,7 +50,7 @@ public sealed class AudioStream : IDisposable
     public AudioPlayer CreatePlayer(AudioBus bus)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        var player = new AudioPlayer(_device, this, bus);
+        var player = new AudioPlayer(_device, _listener, this, bus);
         _players.Add(player);
         return player;
     }
