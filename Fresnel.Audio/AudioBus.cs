@@ -23,6 +23,13 @@ public sealed class AudioBus
         }
     } = 0f;
 
+    /// <summary>
+    /// Gets or sets the stereo balance for non-spatial players routed through this bus.
+    /// </summary>
+    /// <remarks>
+    /// Spatial players derive their channel balance from their position and ignore bus pan.
+    /// </remarks>
+    /// <value>-1 for fully left, 0 for center, and 1 for fully right.</value>
     public float Pan
     {
         get => field;
