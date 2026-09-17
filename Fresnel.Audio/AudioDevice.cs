@@ -12,7 +12,7 @@ internal abstract class AudioDevice : IDisposable
 
     internal abstract void StreamDestroy(ResourceHandle streamHandle);
 
-    internal abstract ResourceHandle TrackCreate(ResourceHandle streamHandle);
+    internal abstract ResourceHandle TrackCreate(ResourceHandle streamHandle, AudioBus bus);
 
     internal abstract void TrackDestroy(ResourceHandle trackHandle);
 

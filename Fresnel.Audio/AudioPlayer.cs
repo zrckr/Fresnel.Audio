@@ -301,7 +301,7 @@ public sealed class AudioPlayer : IDisposable
 
         if (_tracks.Count < MaxVoices)
         {
-            voice = new Track(_device.TrackCreate(_stream.Handle));
+            voice = new Track(_device.TrackCreate(_stream.Handle, _bus));
             _tracks.Add(voice);
             return voice;
         }
@@ -330,10 +330,10 @@ public sealed class AudioPlayer : IDisposable
 
     private void UpdateTrackState(Track track)
     {
-        var (volume, left, right) = _bus.Mixer.GetMixedOutput(_bus);
+        var (left, right) = _bus.Mixer.GetStereoOutput(_bus);
         _device.TrackSetPlaybackRate(track.Handle, PlaybackRate);
         _device.TrackSetLooping(track.Handle, Looping);
-        _device.TrackSetGain(track.Handle, Volume.ToLinear() * volume);
+        _device.TrackSetGain(track.Handle, Volume.ToLinear());
 
         if (GetSpatialPosition() is { } position)
         {

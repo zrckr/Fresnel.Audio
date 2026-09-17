@@ -52,6 +52,7 @@ public class AudioMixer
         var bus = new AudioBus(this, name, config, routeTo);
         _buses.Add(name, bus);
         bus.Changed += BusChanged;
+        Changed?.Invoke();
 
         return bus;
     }
@@ -79,12 +80,11 @@ public class AudioMixer
         for (var current = bus; current is not null; current = current.Parent)
         {
             inSoloSubtree |= current.Solo;
-            muted |= current.Muted || current.Config.Muted;
+            muted |= current.Muted;
 
-            volume *= current.Config.Volume.ToLinear();
             volume *= current.Volume.ToLinear();
 
-            var pan = Math.Clamp(current.Config.Pan + current.Pan, -1f, 1f);
+            var pan = current.Pan;
             left *= 1f - Math.Max(pan, 0f);
             right *= 1f + Math.Min(pan, 0f);
         }
@@ -95,5 +95,54 @@ public class AudioMixer
         }
 
         return (volume, left, right);
+    }
+
+    internal float GetLocalOutputGain(AudioBus bus)
+    {
+        if (!ReferenceEquals(bus.Mixer, this))
+        {
+            throw new ArgumentException("The bus belongs to another mixer.", nameof(bus));
+        }
+
+        var anySolo = _buses.Values.Any(candidate => candidate.Solo);
+        var inSoloSubtree = false;
+        var hasGain = true;
+
+        for (var current = bus; current is not null; current = current.Parent)
+        {
+            if (current.Muted)
+            {
+                hasGain = false;
+                break;
+            }
+
+            inSoloSubtree |= current.Solo;
+        }
+
+        if (!hasGain || (anySolo && !inSoloSubtree))
+        {
+            return 0f;
+        }
+
+        return bus.Volume.ToLinear();
+    }
+
+    internal (float Left, float Right) GetStereoOutput(AudioBus bus)
+    {
+        if (!ReferenceEquals(bus.Mixer, this))
+        {
+            throw new ArgumentException("The bus belongs to another mixer.", nameof(bus));
+        }
+
+        var left = 1f;
+        var right = 1f;
+        for (var current = bus; current is not null; current = current.Parent)
+        {
+            var pan = current.Pan;
+            left *= 1f - Math.Max(pan, 0f);
+            right *= 1f + Math.Min(pan, 0f);
+        }
+
+        return (left, right);
     }
 }

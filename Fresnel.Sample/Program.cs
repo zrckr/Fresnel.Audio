@@ -27,11 +27,7 @@ internal sealed class PlaybackDemo : App
 
     private Renderer _renderer = null!;
 
-    private Db _masterGain = -20f;
-
     private Db _playerGain;
-
-    private Db _musicGain = -20f;
 
     private float _scrubPosition;
 
@@ -489,19 +485,10 @@ internal sealed class PlaybackDemo : App
             ImGui.PushID(index);
             if (ImGui.TreeNode($"Bus: {bus.Name}"))
             {
-                float volume = ReferenceEquals(bus, _mixer.Master) ? _masterGain : _musicGain;
+                float volume = bus.Volume;
                 if (ImGui.SliderFloat("Volume", ref volume, -48f, 12f, "%.0f dB"))
                 {
-                    if (ReferenceEquals(bus, _mixer.Master))
-                    {
-                        _masterGain = Math.Clamp(volume, -48f, 12f);
-                        _mixer.Master.Volume = new Db(_masterGain);
-                    }
-                    else
-                    {
-                        _musicGain = Math.Clamp(volume, -48f, 12f);
-                        _mixer.Music.Volume = new Db(_musicGain);
-                    }
+                    bus.Volume = new Db(Math.Clamp(volume, -48f, 12f));
                 }
 
                 var pan = bus.Pan;
@@ -524,6 +511,7 @@ internal sealed class PlaybackDemo : App
                 }
 
                 ImGui.Text($"Route: {route}");
+
                 ImGui.TreePop();
             }
 
@@ -553,7 +541,25 @@ internal sealed class PlaybackDemo : App
 
             Sfx = AddBus(nameof(Sfx), new AudioBusConfig
             {
-                Volume = -6f
+                Volume = -6f,
+                Effects =
+                {
+                    new ReverbEffect
+                    {
+                        Gain = 0.45f,
+                        HighGain = 0.75f,
+                        Density = 0.85f,
+                        Diffusion = 0.9f,
+                        DecayTime = TimeSpan.FromSeconds(1.8),
+                        DecayHighRatio = 0.7f,
+                        EarlyGain = 0.3f,
+                        EarlyDelay = TimeSpan.FromMilliseconds(18),
+                        LateGain = 1.1f,
+                        LateDelay = TimeSpan.FromMilliseconds(12),
+                        AirAbsorption = 0.98f,
+                        HighLimit = true
+                    }
+                }
             });
         }
     }

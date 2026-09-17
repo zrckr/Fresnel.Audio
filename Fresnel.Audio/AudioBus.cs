@@ -39,7 +39,7 @@ public sealed class AudioBus
                 Changed?.Invoke();
             }
         }
-    } = 0f;
+    }
 
     /// <summary>
     /// Gets or sets the stereo balance for non-spatial players routed through this bus.
@@ -98,7 +98,16 @@ public sealed class AudioBus
         }
     }
 
+    /// <summary>
+    /// Gets the active, stateful effect processors in processing order.
+    /// </summary>
+    internal IReadOnlyList<EffectProcessor> EffectProcessors => _effectProcessors;
+
     internal event Action? Changed;
+
+    private readonly List<EffectProcessor> _effectProcessors = [];
+
+    private bool _effectInitialized;
 
     internal AudioBus(AudioMixer mixer, string name, AudioBusConfig config, AudioBus? parent)
     {
@@ -106,5 +115,35 @@ public sealed class AudioBus
         Name = name;
         Config = config;
         Parent = parent;
+        Volume = config.Volume;
+        Pan = config.Pan;
+        Muted = config.Muted;
+    }
+
+    internal void InitializeEffects(int sampleRate, int channels)
+    {
+        if (_effectInitialized)
+        {
+            return;
+        }
+
+        foreach (var effect in Config.Effects)
+        {
+            effect.Validate();
+            _effectProcessors.Add(effect switch
+            {
+                ChorusEffect chorus => new ChorusProcessor(chorus, sampleRate, channels),
+                CompressorEffect compressor => new CompressorProcessor(compressor, sampleRate, channels),
+                DistortionEffect distortion => new DistortionProcessor(distortion, sampleRate, channels),
+                EchoEffect echo => new EchoProcessor(echo, sampleRate, channels),
+                EqualizerEffect equalizer => new EqualizerProcessor(equalizer, sampleRate, channels),
+                FlangerEffect flanger => new FlangerProcessor(flanger, sampleRate, channels),
+                ReverbEffect reverb => new ReverbProcessor(reverb, sampleRate, channels),
+                RingModulatorEffect ringModulator => new RingModulatorProcessor(ringModulator, sampleRate, channels),
+                _ => throw new NotSupportedException($"The effect type '{effect.GetType().Name}' has no processor implementation.")
+            });
+        }
+
+        _effectInitialized = true;
     }
 }

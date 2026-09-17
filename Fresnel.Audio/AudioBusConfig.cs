@@ -3,7 +3,7 @@
 /// <summary>
 /// Specifies the initial settings for an <see cref="AudioBus"/>.
 /// </summary>
-public record struct AudioBusConfig
+public record struct AudioBusConfig()
 {
     /// <summary>
     /// Gets the initial volume adjustment in decibels.
@@ -35,4 +35,9 @@ public record struct AudioBusConfig
     /// Gets whether the bus starts muted.
     /// </summary>
     public bool Muted { get; init; }
+
+    /// <summary>
+    /// Gets a list of effects.
+    /// </summary>
+    public IList<IEffect> Effects { get; init; } = [];
 }

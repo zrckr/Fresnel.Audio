@@ -70,4 +70,9 @@
     <PackageReference Include="FosterFramework" Version="0.4.2" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="..\THIRD-PARTY-NOTICES.md" Pack="true" PackagePath="" />
+    <None Include="..\LICENSES\LGPL-2.0-or-later.txt" Pack="true" PackagePath="licenses" />
+  </ItemGroup>
+
 </Project>
