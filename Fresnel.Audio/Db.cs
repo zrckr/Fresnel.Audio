@@ -32,7 +32,7 @@ public readonly record struct Db : IComparable<Db>
             throw new ArgumentOutOfRangeException(nameof(linear), "Linear must not be NaN.");
         }
 
-        return new Db(MathF.Log10(Math.Clamp(linear, 0f, 1f)) * 20f);
+        return new Db(MathF.Log10(linear) * 20f);
     }
 
     public static implicit operator Db(float value)
