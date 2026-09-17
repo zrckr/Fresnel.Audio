@@ -20,10 +20,6 @@
     <IsArm64>true</IsArm64>
   </PropertyGroup>
 
-  <PropertyGroup Condition="$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture) == 'Arm32'">
-    <IsArm32>true</IsArm32>
-  </PropertyGroup>
-
   <PropertyGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
     <IsWindows>true</IsWindows>
   </PropertyGroup>
@@ -52,12 +48,6 @@
     <Content Include="$(NativeLibsDir)linux-arm64\**" Visible="false">
       <CopyToOutputDirectory Condition="('$(RuntimeIdentifier)' == '' and $(IsLinux) == 'true' and $(IsArm64) == 'true') or '$(RuntimeIdentifier)' == 'linux-arm64'">PreserveNewest</CopyToOutputDirectory>
       <PackagePath>runtimes\linux-arm64\native</PackagePath>
-      <Pack>True</Pack>
-      <Link>%(Filename)%(Extension)</Link>
-    </Content>
-    <Content Include="$(NativeLibsDir)linux-arm\**" Visible="false">
-      <CopyToOutputDirectory Condition="('$(RuntimeIdentifier)' == '' and $(IsLinux) == 'true' and $(IsArm32) == 'true') or '$(RuntimeIdentifier)' == 'linux-arm'">PreserveNewest</CopyToOutputDirectory>
-      <PackagePath>runtimes\linux-arm\native</PackagePath>
       <Pack>True</Pack>
       <Link>%(Filename)%(Extension)</Link>
     </Content>
