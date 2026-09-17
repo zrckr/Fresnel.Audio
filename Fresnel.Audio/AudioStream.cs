@@ -5,13 +5,13 @@ namespace Fresnel.Audio;
 
 public sealed class AudioStream : IDisposable
 {
-    public TimeSpan? Duration => _device.StreamGetDuration(Handle);
+    public TimeSpan? Duration => _audio.Device.StreamGetDuration(Handle);
 
     public IReadOnlyCollection<AudioPlayer> Players => _players;
 
     internal AudioDevice.ResourceHandle Handle { get; }
 
-    private readonly AudioDevice _device;
+    private readonly Audio _audio;
 
     private readonly AudioListener _listener;
 
@@ -31,9 +31,12 @@ public sealed class AudioStream : IDisposable
 
     public AudioStream(Audio audio, ReadOnlySpan<byte> encodedData, AudioLoadMode mode = AudioLoadMode.Decoded)
     {
-        _device = audio.Device;
+        ArgumentNullException.ThrowIfNull(audio);
+        ObjectDisposedException.ThrowIf(audio.IsDisposed, audio);
+        _audio = audio;
         _listener = audio.Listener;
         Handle = CreateStream(encodedData, mode);
+        audio.AddStream(this);
     }
 
     private AudioDevice.ResourceHandle CreateStream(ReadOnlySpan<byte> encodedData, AudioLoadMode mode)
@@ -41,16 +44,16 @@ public sealed class AudioStream : IDisposable
         if (Qoa.IsQoa(encodedData))
         {
             var decoded = Qoa.Decode(encodedData);
-            return _device.StreamCreateRaw(MemoryMarshal.AsBytes(decoded.Pcm.AsSpan()), decoded.Channels, decoded.SampleRate);
+            return _audio.Device.StreamCreateRaw(MemoryMarshal.AsBytes(decoded.Pcm.AsSpan()), decoded.Channels, decoded.SampleRate);
         }
 
-        return _device.StreamCreate(encodedData, mode);
+        return _audio.Device.StreamCreate(encodedData, mode);
     }
 
     public AudioPlayer CreatePlayer(AudioBus bus)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        var player = new AudioPlayer(_device, _listener, this, bus);
+        var player = new AudioPlayer(_audio.Device, _listener, this, bus);
         _players.Add(player);
         return player;
     }
@@ -71,7 +74,8 @@ public sealed class AudioStream : IDisposable
             }
 
             _players.Clear();
-            _device.StreamDestroy(Handle);
+            _audio.Device.StreamDestroy(Handle);
+            _audio.RemoveStream(this);
             _disposed = true;
         }
     }
