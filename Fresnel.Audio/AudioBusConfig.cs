@@ -1,7 +1,13 @@
 ﻿namespace Fresnel.Audio;
 
+/// <summary>
+/// Specifies the initial settings for an <see cref="AudioBus"/>.
+/// </summary>
 public record struct AudioBusConfig
 {
+    /// <summary>
+    /// Gets the initial volume adjustment in decibels.
+    /// </summary>
     public Db Volume { get; init; }
 
     /// <summary>
@@ -25,5 +31,8 @@ public record struct AudioBusConfig
         }
     }
 
+    /// <summary>
+    /// Gets whether the bus starts muted.
+    /// </summary>
     public bool Muted { get; init; }
 }

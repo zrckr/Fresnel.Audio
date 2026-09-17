@@ -1,5 +1,8 @@
 ﻿namespace Fresnel.Audio;
 
+/// <summary>
+/// Controls when supported encoded audio is decoded.
+/// </summary>
 public enum AudioLoadMode
 {
     /// <summary>

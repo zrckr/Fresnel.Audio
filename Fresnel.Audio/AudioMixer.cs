@@ -1,15 +1,27 @@
 ﻿namespace Fresnel.Audio;
 
+/// <summary>
+/// Routes audio through a hierarchy of buses.
+/// </summary>
 public class AudioMixer
 {
+    /// <summary>
+    /// The root bus that routes directly to the audio device.
+    /// </summary>
     public AudioBus Master { get; }
 
+    /// <summary>
+    /// All buses in this mixer, indexed by name.
+    /// </summary>
     public IReadOnlyDictionary<string, AudioBus> Buses => _buses;
 
     private readonly OrderedDictionary<string, AudioBus> _buses = new(StringComparer.Ordinal);
 
     internal event Action? Changed;
 
+    /// <summary>
+    /// Creates a mixer with a master bus.
+    /// </summary>
     public AudioMixer(AudioBusConfig? masterConfig = null)
     {
         Master = new AudioBus(this, nameof(Master), masterConfig ?? new AudioBusConfig(), parent: null);
@@ -17,6 +29,12 @@ public class AudioMixer
         Master.Changed += BusChanged;
     }
 
+    /// <summary>
+    /// Adds a named bus, optionally routed through another bus in this mixer.
+    /// </summary>
+    /// <remarks>
+    /// This method is intended for derived mixer types that expose their fixed bus layout.
+    /// </remarks>
     protected AudioBus AddBus(string name, AudioBusConfig config, AudioBus? routeTo = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);

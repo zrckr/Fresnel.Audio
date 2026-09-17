@@ -2,8 +2,14 @@ using System.Numerics;
 
 namespace Fresnel.Audio;
 
+/// <summary>
+/// Plays an <see cref="AudioStream"/> through an <see cref="AudioBus"/>.
+/// </summary>
 public sealed class AudioPlayer : IDisposable
 {
+    /// <summary>
+    /// Gets or sets this player's volume adjustment in decibels.
+    /// </summary>
     public Db Volume
     {
         get;
@@ -17,6 +23,12 @@ public sealed class AudioPlayer : IDisposable
         }
     } = 0f;
 
+    /// <summary>
+    /// Gets or sets the maximum number of concurrent playbacks this player can produce.
+    /// </summary>
+    /// <remarks>
+    /// Starting playback after reaching this limit stops and reuses the oldest active voice.
+    /// </remarks>
     public int MaxVoices
     {
         get;
@@ -32,6 +44,9 @@ public sealed class AudioPlayer : IDisposable
         }
     } = 1;
 
+    /// <summary>
+    /// Gets the aggregate state of this player's active voices.
+    /// </summary>
     public PlaybackState State
     {
         get
@@ -47,6 +62,9 @@ public sealed class AudioPlayer : IDisposable
         }
     }
 
+    /// <summary>
+    /// Gets or sets the playback speed multiplier.
+    /// </summary>
     public float PlaybackRate
     {
         get;
@@ -65,6 +83,9 @@ public sealed class AudioPlayer : IDisposable
         }
     } = 1f;
 
+    /// <summary>
+    /// Gets or sets whether newly started playback loops when it reaches the end.
+    /// </summary>
     public bool Looping
     {
         get;
@@ -78,6 +99,13 @@ public sealed class AudioPlayer : IDisposable
         }
     }
 
+    /// <summary>
+    /// Gets or sets the position of the most recently started active voice.
+    /// </summary>
+    /// <remarks>
+    /// Reading returns <see cref="TimeSpan.Zero"/> when no voice is active.
+    /// <br/> Setting the position has no effect when no voice is active.
+    /// </remarks>
     public TimeSpan Position
     {
         get
@@ -96,6 +124,9 @@ public sealed class AudioPlayer : IDisposable
         }
     }
 
+    /// <summary>
+    /// Gets or sets how this player's output is spatialized relative to the audio listener.
+    /// </summary>
     public AudioSpatial Spatial
     {
         get => _spatial;
@@ -115,8 +146,14 @@ public sealed class AudioPlayer : IDisposable
         }
     }
 
+    /// <summary>
+    /// Whether this player has been disposed.
+    /// </summary>
     public bool IsDisposed { get; private set; }
 
+    /// <summary>
+    /// Gets the number of voices that are currently active.
+    /// </summary>
     public int ActiveVoices => _tracks.Count(track => _device.TrackIsActive(track.Handle));
 
     private readonly AudioStream _stream;
@@ -144,6 +181,9 @@ public sealed class AudioPlayer : IDisposable
         _spatial.Changed += UpdateTrackStates;
     }
 
+    /// <summary>
+    /// Stops playback and releases this player's voices.
+    /// </summary>
     public void Dispose()
     {
         if (!IsDisposed)
@@ -162,6 +202,9 @@ public sealed class AudioPlayer : IDisposable
         }
     }
 
+    /// <summary>
+    /// Starts a new voice at the given position.
+    /// </summary>
     public void Play(TimeSpan fromPosition = default)
     {
         ObjectDisposedException.ThrowIf(IsDisposed, this);
@@ -175,6 +218,12 @@ public sealed class AudioPlayer : IDisposable
         }
     }
 
+    /// <summary>
+    /// Moves every active voice to the given position.
+    /// </summary>
+    /// <remarks>
+    /// Seeking to the stream duration stops active voices.
+    /// </remarks>
     public void Seek(TimeSpan toPosition = default)
     {
         ObjectDisposedException.ThrowIf(IsDisposed, this);
@@ -197,6 +246,9 @@ public sealed class AudioPlayer : IDisposable
         }
     }
 
+    /// <summary>
+    /// Pauses every active voice.
+    /// </summary>
     public void Pause()
     {
         ObjectDisposedException.ThrowIf(IsDisposed, this);
@@ -209,6 +261,9 @@ public sealed class AudioPlayer : IDisposable
         }
     }
 
+    /// <summary>
+    /// Resumes every active voice.
+    /// </summary>
     public void Resume()
     {
         ObjectDisposedException.ThrowIf(IsDisposed, this);
@@ -221,6 +276,9 @@ public sealed class AudioPlayer : IDisposable
         }
     }
 
+    /// <summary>
+    /// Stops every active voice.
+    /// </summary>
     public void Stop()
     {
         ObjectDisposedException.ThrowIf(IsDisposed, this);
@@ -331,10 +389,22 @@ public sealed class AudioPlayer : IDisposable
         }
     }
 
+    /// <summary>
+    /// Describes the aggregate playback state of an <see cref="AudioPlayer"/>.
+    /// </summary>
     public enum PlaybackState
     {
+        /// <summary>
+        /// No voices are active.
+        /// </summary>
         Stopped,
+        /// <summary>
+        /// At least one voice is playing.
+        /// </summary>
         Playing,
+        /// <summary>
+        /// Voices are active, but none are playing.
+        /// </summary>
         Paused
     }
 

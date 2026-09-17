@@ -3,10 +3,19 @@ using System.Runtime.InteropServices;
 
 namespace Fresnel.Audio;
 
+/// <summary>
+/// Stores audio data that can create one or more independently controlled players.
+/// </summary>
 public sealed class AudioStream : IDisposable
 {
+    /// <summary>
+    /// The duration of the audio, when it is available from the source format.
+    /// </summary>
     public TimeSpan? Duration => _audio.Device.StreamGetDuration(Handle);
 
+    /// <summary>
+    /// The players created from this stream that have not been disposed.
+    /// </summary>
     public IReadOnlyCollection<AudioPlayer> Players => _players;
 
     internal AudioDevice.ResourceHandle Handle { get; }
@@ -19,16 +28,25 @@ public sealed class AudioStream : IDisposable
 
     private bool _disposed;
 
+    /// <summary>
+    /// Loads audio from a path in a Foster storage container.
+    /// </summary>
     public AudioStream(Audio audio, StorageContainer storage, string path, AudioLoadMode mode = AudioLoadMode.Decoded)
         : this(audio, ReadStorage(storage, path).Span, mode)
     {
     }
 
+    /// <summary>
+    /// Loads audio from a stream.
+    /// </summary>
     public AudioStream(Audio audio, Stream source, AudioLoadMode mode = AudioLoadMode.Decoded)
         : this(audio, ReadAllBytes(source).Span, mode)
     {
     }
 
+    /// <summary>
+    /// Loads audio from encoded bytes.
+    /// </summary>
     public AudioStream(Audio audio, ReadOnlySpan<byte> encodedData, AudioLoadMode mode = AudioLoadMode.Decoded)
     {
         ArgumentNullException.ThrowIfNull(audio);
@@ -50,6 +68,9 @@ public sealed class AudioStream : IDisposable
         return _audio.Device.StreamCreate(encodedData, mode);
     }
 
+    /// <summary>
+    /// Creates a player routed through the given mixer bus.
+    /// </summary>
     public AudioPlayer CreatePlayer(AudioBus bus)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -64,6 +85,9 @@ public sealed class AudioStream : IDisposable
         _players.Remove(player);
     }
 
+    /// <summary>
+    /// Disposes this stream and all players created from it.
+    /// </summary>
     public void Dispose()
     {
         if (!_disposed)
