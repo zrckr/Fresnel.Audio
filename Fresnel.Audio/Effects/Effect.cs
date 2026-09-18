@@ -1,8 +1,19 @@
-﻿namespace Fresnel.Audio;
+﻿using System.Text.Json.Serialization;
+
+namespace Fresnel.Audio;
 
 /// <summary>
 /// Defines settings that can create a stateful audio effect processor.
 /// </summary>
+[JsonPolymorphic(TypeDiscriminatorPropertyName = "$type")]
+[JsonDerivedType(typeof(ChorusEffect), nameof(ChorusEffect))]
+[JsonDerivedType(typeof(CompressorEffect), nameof(CompressorEffect))]
+[JsonDerivedType(typeof(DistortionEffect), nameof(DistortionEffect))]
+[JsonDerivedType(typeof(EchoEffect), nameof(EchoEffect))]
+[JsonDerivedType(typeof(EqualizerEffect), nameof(EqualizerEffect))]
+[JsonDerivedType(typeof(FlangerEffect), nameof(FlangerEffect))]
+[JsonDerivedType(typeof(ReverbEffect), nameof(ReverbEffect))]
+[JsonDerivedType(typeof(RingModulatorEffect), nameof(RingModulatorEffect))]
 public interface IEffect
 {
     /// <summary>

@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Text.Json.Serialization;
 using Foster.Framework;
 using Fresnel.Audio;
 using Fresnel.Sample;
@@ -9,7 +10,7 @@ app.Run();
 
 internal sealed class PlaybackDemo : App
 {
-    private readonly ExampleMixer _mixer = new();
+    private readonly ExampleMixer _mixer;
 
     private Audio _audio = null!;
 
@@ -58,6 +59,8 @@ internal sealed class PlaybackDemo : App
     public PlaybackDemo()
         : base(new AppConfig("Fresnel.Sample", "Fresnel.Audio playback demo", 1280, 720))
     {
+        var mixerConfig = new ExampleMixerConfig();
+        _mixer = new ExampleMixer(mixerConfig);
     }
 
     protected override void Startup()
@@ -528,39 +531,52 @@ internal sealed class PlaybackDemo : App
 
     private sealed class ExampleMixer : AudioMixer
     {
-        public AudioBus Music { get; }
+        public readonly AudioBus Music;
 
-        public AudioBus Sfx { get; }
+        public readonly AudioBus Sfx;
 
-        public ExampleMixer()
+        public ExampleMixer(ExampleMixerConfig config)
+            : base(config.Master)
         {
-            Music = AddBus(nameof(Music), new AudioBusConfig
-            {
-                Volume = -12f
-            });
-
-            Sfx = AddBus(nameof(Sfx), new AudioBusConfig
-            {
-                Volume = -6f,
-                Effects =
-                {
-                    new ReverbEffect
-                    {
-                        Gain = 0.45f,
-                        HighGain = 0.75f,
-                        Density = 0.85f,
-                        Diffusion = 0.9f,
-                        DecayTime = TimeSpan.FromSeconds(1.8),
-                        DecayHighRatio = 0.7f,
-                        EarlyGain = 0.3f,
-                        EarlyDelay = TimeSpan.FromMilliseconds(18),
-                        LateGain = 1.1f,
-                        LateDelay = TimeSpan.FromMilliseconds(12),
-                        AirAbsorption = 0.98f,
-                        HighLimit = true
-                    }
-                }
-            });
+            Music = AddBus(nameof(Music), config.Music);
+            Sfx = AddBus(nameof(Sfx), config.Sfx);
         }
     }
 }
+
+internal sealed class ExampleMixerConfig
+{
+    public AudioBus Master { get; init; } = new();
+
+    public AudioBus Music { get; init; } = new()
+    {
+        Volume = -12f
+    };
+
+    public AudioBus Sfx { get; init; } = new()
+    {
+        Volume = -6f,
+        Effects =
+        [
+            new ReverbEffect
+            {
+                Gain = 0.45f,
+                HighGain = 0.75f,
+                Density = 0.85f,
+                Diffusion = 0.9f,
+                DecayTime = TimeSpan.FromSeconds(1.8),
+                DecayHighRatio = 0.7f,
+                EarlyGain = 0.3f,
+                EarlyDelay = TimeSpan.FromMilliseconds(18),
+                LateGain = 1.1f,
+                LateDelay = TimeSpan.FromMilliseconds(12),
+                AirAbsorption = 0.98f,
+                HighLimit = true
+            }
+        ]
+    };
+}
+
+[JsonSourceGenerationOptions(WriteIndented = true)]
+[JsonSerializable(typeof(ExampleMixerConfig))]
+internal partial class ExampleMixerConfigContext : JsonSerializerContext;

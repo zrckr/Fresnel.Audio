@@ -3,7 +3,7 @@
 /// <summary>
 /// Routes audio through a hierarchy of buses.
 /// </summary>
-public class AudioMixer
+public abstract class AudioMixer
 {
     /// <summary>
     /// The root bus that routes directly to the audio device.
@@ -15,42 +15,61 @@ public class AudioMixer
     /// </summary>
     public IReadOnlyDictionary<string, AudioBus> Buses => _buses;
 
+    /// <summary>
+    /// Creates a mixer using the supplied root bus.
+    /// </summary>
+    protected AudioMixer(AudioBus master)
+    {
+        Master = AddBus(nameof(Master), master, routeTo: null);
+    }
+
     private readonly OrderedDictionary<string, AudioBus> _buses = new(StringComparer.Ordinal);
 
-    internal event Action? Changed;
+    private readonly Dictionary<AudioBus, AudioBus?> _routes = [];
 
-    /// <summary>
-    /// Creates a mixer with a master bus.
-    /// </summary>
-    public AudioMixer(AudioBusConfig? masterConfig = null)
-    {
-        Master = new AudioBus(this, nameof(Master), masterConfig ?? new AudioBusConfig(), parent: null);
-        _buses.Add(Master.Name, Master);
-        Master.Changed += BusChanged;
-    }
+    internal event Action? Changed;
 
     /// <summary>
     /// Adds a named bus, optionally routed through another bus in this mixer.
     /// </summary>
     /// <remarks>
-    /// This method is intended for derived mixer types that expose their fixed bus layout.
+    /// This method is intended for derived mixer types that expose their fixed bus layout. When
+    /// <paramref name="routeTo"/> is omitted, the bus routes through <see cref="Master"/>.
     /// </remarks>
-    protected AudioBus AddBus(string name, AudioBusConfig config, AudioBus? routeTo = null)
+    protected AudioBus AddBus(string name, AudioBus bus, AudioBus? routeTo = null)
     {
+        ArgumentNullException.ThrowIfNull(bus);
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
-        routeTo ??= Master;
-        if (!ReferenceEquals(routeTo.Mixer, this))
+
+        if (_buses.Count == 0)
         {
-            throw new ArgumentException("The parent belongs to another mixer.", nameof(routeTo));
+            if (routeTo != null)
+            {
+                throw new ArgumentException("The master bus cannot have a destination.", nameof(routeTo));
+            }
+        }
+        else
+        {
+            routeTo ??= Master;
+            if (!ReferenceEquals(routeTo.Mixer, this))
+            {
+                throw new ArgumentException("The destination belongs to another mixer.", nameof(routeTo));
+            }
         }
 
-        if (_buses.ContainsKey(name))
+        if (bus.Mixer != null)
+        {
+            throw new ArgumentException("The bus is already registered with a mixer.", nameof(bus));
+        }
+
+        if (!_buses.TryAdd(name, bus))
         {
             throw new ArgumentException($"A bus named '{name}' already exists.", nameof(name));
         }
 
-        var bus = new AudioBus(this, name, config, routeTo);
-        _buses.Add(name, bus);
+        bus.Name = name;
+        bus.Mixer = this;
+        _routes.Add(bus, routeTo);
         bus.Changed += BusChanged;
         Changed?.Invoke();
 
@@ -62,39 +81,14 @@ public class AudioMixer
         Changed?.Invoke();
     }
 
-    internal (float Volume, float Left, float Right) GetMixedOutput(AudioBus bus)
+    internal AudioBus? GetDestination(AudioBus bus)
     {
-        if (!ReferenceEquals(bus.Mixer, this))
+        if (!ReferenceEquals(bus.Mixer, this) || !_routes.TryGetValue(bus, out var destination))
         {
-            throw new ArgumentException("The bus belongs to another mixer.", nameof(bus));
+            throw new ArgumentException("The bus does not belong to this mixer.", nameof(bus));
         }
 
-        var anySolo = _buses.Values.Any(candidate => candidate.Solo);
-        var inSoloSubtree = false;
-        var muted = false;
-
-        var volume = 1f;
-        var left = 1f;
-        var right = 1f;
-
-        for (var current = bus; current is not null; current = current.Parent)
-        {
-            inSoloSubtree |= current.Solo;
-            muted |= current.Muted;
-
-            volume *= current.Volume.ToLinear();
-
-            var pan = current.Pan;
-            left *= 1f - Math.Max(pan, 0f);
-            right *= 1f + Math.Min(pan, 0f);
-        }
-
-        if (muted || (anySolo && !inSoloSubtree))
-        {
-            volume = 0f;
-        }
-
-        return (volume, left, right);
+        return destination;
     }
 
     internal float GetLocalOutputGain(AudioBus bus)

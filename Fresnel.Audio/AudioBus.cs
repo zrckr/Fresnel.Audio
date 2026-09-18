@@ -1,29 +1,18 @@
-﻿namespace Fresnel.Audio;
+﻿using System.Collections.Immutable;
+using System.Text.Json.Serialization;
+
+namespace Fresnel.Audio;
 
 /// <summary>
-/// A mixer route with independent volume, pan, mute, and solo controls.
+/// Configures a mixer bus with independent volume, pan, mute, and solo controls.
 /// </summary>
 public sealed class AudioBus
 {
     /// <summary>
-    /// The unique name of this bus within its mixer.
+    /// Gets the unique name of this bus within its mixer, or <see langword="null"/> when it is unregistered.
     /// </summary>
-    public string Name { get; }
-
-    /// <summary>
-    /// The bus this bus routes through, or <see langword="null"/> for the master bus.
-    /// </summary>
-    public AudioBus? Parent { get; }
-
-    /// <summary>
-    /// The configuration supplied when this bus was created.
-    /// </summary>
-    public AudioBusConfig Config { get; }
-
-    /// <summary>
-    /// The mixer that owns this bus.
-    /// </summary>
-    public AudioMixer Mixer { get; }
+    [JsonIgnore]
+    public string? Name { get; internal set; }
 
     /// <summary>
     /// Gets or sets this bus's runtime volume adjustment in decibels.
@@ -47,7 +36,9 @@ public sealed class AudioBus
     /// <remarks>
     /// Spatial players derive their channel balance from their position and ignore bus pan.
     /// </remarks>
-    /// <value>-1 for fully left, 0 for center, and 1 for fully right.</value>
+    /// <value>
+    /// -1 for fully left, 0 for center, and 1 for fully right.
+    /// </value>
     public float Pan
     {
         get => field;
@@ -99,26 +90,22 @@ public sealed class AudioBus
     }
 
     /// <summary>
-    /// Gets the active, stateful effect processors in processing order.
+    /// Gets or initializes the effects processed by this bus.
     /// </summary>
-    internal IReadOnlyList<EffectProcessor> EffectProcessors => _effectProcessors;
+    public ImmutableArray<IEffect> Effects { get; init; } = [];
+
+    /// <summary>
+    /// Gets the bus this bus routes through, or <see langword="null"/> for the master bus or an unregistered bus.
+    /// </summary>
+    [JsonIgnore] public AudioBus? Parent => Mixer.GetDestination(this);
+
+    internal AudioMixer Mixer { get; set; } = null!;
+
+    internal IList<EffectProcessor> EffectProcessors { get; } = new List<EffectProcessor>();
 
     internal event Action? Changed;
 
-    private readonly List<EffectProcessor> _effectProcessors = [];
-
     private bool _effectInitialized;
-
-    internal AudioBus(AudioMixer mixer, string name, AudioBusConfig config, AudioBus? parent)
-    {
-        Mixer = mixer;
-        Name = name;
-        Config = config;
-        Parent = parent;
-        Volume = config.Volume;
-        Pan = config.Pan;
-        Muted = config.Muted;
-    }
 
     internal void InitializeEffects(int sampleRate, int channels)
     {
@@ -127,10 +114,10 @@ public sealed class AudioBus
             return;
         }
 
-        foreach (var effect in Config.Effects)
+        foreach (var effect in Effects)
         {
             effect.Validate();
-            _effectProcessors.Add(effect switch
+            EffectProcessors.Add(effect switch
             {
                 ChorusEffect chorus => new ChorusProcessor(chorus, sampleRate, channels),
                 CompressorEffect compressor => new CompressorProcessor(compressor, sampleRate, channels),
@@ -140,7 +127,8 @@ public sealed class AudioBus
                 FlangerEffect flanger => new FlangerProcessor(flanger, sampleRate, channels),
                 ReverbEffect reverb => new ReverbProcessor(reverb, sampleRate, channels),
                 RingModulatorEffect ringModulator => new RingModulatorProcessor(ringModulator, sampleRate, channels),
-                _ => throw new NotSupportedException($"The effect type '{effect.GetType().Name}' has no processor implementation.")
+                _ => throw new NotSupportedException(
+                    $"The effect type '{effect.GetType().Name}' has no processor implementation.")
             });
         }
 

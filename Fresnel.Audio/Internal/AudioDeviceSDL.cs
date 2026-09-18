@@ -1,4 +1,3 @@
-using System.Text.Json;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Foster.Framework;
@@ -8,7 +7,7 @@ using Foster.Framework;
 
 namespace Fresnel.Audio;
 
-internal sealed unsafe partial class AudioDeviceSDL : AudioDevice
+internal sealed unsafe class AudioDeviceSDL : AudioDevice
 {
     private const uint DefaultPlaybackDevice = uint.MaxValue;
 
