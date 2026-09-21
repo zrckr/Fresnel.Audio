@@ -4,7 +4,9 @@ using System.Runtime.InteropServices;
 
 namespace SDL3;
 
-/// <summary>Raw bindings for SDL_mixer 3.2.4.</summary>
+/// <summary>
+/// Raw bindings for SDL_mixer 3.2.4.
+/// </summary>
 /// <remarks>
 /// Pointer ownership and thread-safety follow SDL_mixer.h. Native C
 /// Managed <c>bool</c> values use explicit one-byte marshalling to preserve the SDL ABI.
@@ -14,8 +16,8 @@ internal static unsafe partial class SDL3_Mixer
 {
 	internal const string LibraryName = "SDL3_mixer";
 	internal const int MajorVersion = 3;
-	internal const int MinorVersion = 3;
-	internal const int MicroVersion = 0;
+	internal const int MinorVersion = 2;
+	internal const int MicroVersion = 4;
 
 	internal const string PropMixerDeviceNumber = "SDL_mixer.mixer.device";
 	internal const string PropAudioLoadIOStreamPointer = "SDL_mixer.audio.load.iostream";
