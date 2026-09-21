@@ -368,14 +368,14 @@ internal sealed unsafe class AudioDeviceSDL : AudioDevice
             throw Error(nameof(SDL3.SDL3_Mixer.GetMixerFormat));
         }
 
-        bus.InitializeEffects(spec.freq, spec.channels);
+        var effects = new EffectChain(bus.Effects, spec.freq, spec.channels);
         var nativeGroup = SDL3.SDL3_Mixer.CreateGroup(GetMixer());
         if (nativeGroup == null)
         {
             throw Error(nameof(SDL3.SDL3_Mixer.CreateGroup));
         }
 
-        var group = new BusGroup(bus, nativeGroup);
+        var group = new BusGroup(bus, nativeGroup, effects);
         if (!SDL3.SDL3_Mixer.SetGroupPostMixCallback(nativeGroup, &GroupPostMix,
                 (void*)GCHandle.ToIntPtr(group.Handle)))
         {
@@ -444,10 +444,7 @@ internal sealed unsafe class AudioDeviceSDL : AudioDevice
             Add(buffer, childGroup.Buffer.AsSpan(0, samples));
         }
 
-        foreach (var processor in busGroup.Bus.EffectProcessors)
-        {
-            processor.Process(buffer);
-        }
+        busGroup.Effects.Process(buffer);
 
         var gain = Volatile.Read(ref busGroup.Gain);
         if (Math.Abs(gain - 1f) > float.Epsilon)
@@ -503,7 +500,7 @@ internal sealed unsafe class AudioDeviceSDL : AudioDevice
 
         private BusGroup[] _children;
 
-        internal readonly AudioBus Bus;
+        private readonly AudioBus _bus;
 
         internal readonly float[] Buffer = new float[MaximumCallbackSamples];
 
@@ -513,14 +510,17 @@ internal sealed unsafe class AudioDeviceSDL : AudioDevice
 
         internal float Gain;
 
-        internal BusGroup(AudioBus bus, void* group)
+        internal readonly EffectChain Effects;
+
+        internal BusGroup(AudioBus bus, void* group, EffectChain effects)
         {
             _children = [];
-            Bus = bus;
+            _bus = bus;
             Group = group;
+            Effects = effects;
             Handle = GCHandle.Alloc(this);
             UpdateGain();
-            Bus.Mixer.Changed += UpdateGain;
+            _bus.Mixer.Changed += UpdateGain;
         }
 
         internal void AddChild(BusGroup child)
@@ -542,7 +542,7 @@ internal sealed unsafe class AudioDeviceSDL : AudioDevice
 
         public void Dispose()
         {
-            Bus.Mixer.Changed -= UpdateGain;
+            _bus.Mixer.Changed -= UpdateGain;
             SDL3.SDL3_Mixer.SetGroupPostMixCallback(Group, null, null);
             if (Handle.IsAllocated)
             {
@@ -554,7 +554,7 @@ internal sealed unsafe class AudioDeviceSDL : AudioDevice
 
         private void UpdateGain()
         {
-            Volatile.Write(ref Gain, Bus.Mixer.GetLocalOutputGain(Bus));
+            Volatile.Write(ref Gain, _bus.Mixer.GetLocalOutputGain(_bus));
         }
     }
 }

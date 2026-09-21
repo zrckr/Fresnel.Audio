@@ -1,7 +1,4 @@
-﻿// DSP implementation adapted from OpenAL Soft 1.25.2.
-// Source: alc/effects/reverb.cpp.
-// Upstream notice: Copyright (C) 2008-2017 Chris Robinson and Christopher Fitzgerald.
-// Adapted portions are licensed under LGPL-2.0-or-later.
+// DSP implementation adapted from OpenAL Soft 1.25.2.
 // See THIRD-PARTY-NOTICES.md for attribution and license terms.
 
 namespace Fresnel.Audio;
@@ -9,124 +6,67 @@ namespace Fresnel.Audio;
 /// <summary>
 /// Configures a four-line feedback-delay-network reverb.
 /// </summary>
-public readonly record struct ReverbEffect() : IEffect
+public sealed record ReverbEffect : AudioEffect
 {
     /// <summary>
-    /// Gets the linear input gain of the wet reverb path.
-    /// </summary>
-    /// <value>A value from 0 to 1.</value>
-    public float Gain { get; init; } = 0.32f;
-
-    /// <summary>
-    /// Gets the relative high-frequency gain applied to the reverb input.
-    /// </summary>
-    /// <value>A value from 0 to 1.</value>
-    public float HighGain { get; init; } = 0.89f;
-
-    /// <summary>
-    /// Gets the modal density used to scale the internal delay-line lengths.
-    /// </summary>
-    /// <value>A value from 0 to 1.</value>
-    public float Density { get; init; } = 1f;
-
-    /// <summary>
-    /// Gets the amount of scattering between the reverb delay lines.
-    /// </summary>
-    /// <value>A value from 0 for sparse reflections to 1 for maximum diffusion.</value>
-    public float Diffusion { get; init; } = 1f;
-
-    /// <summary>
-    /// Gets the time for the mid-frequency reverberation to decay by 60 decibels.
-    /// </summary>
-    /// <value>A duration from 0.1 to 20 seconds.</value>
-    public TimeSpan DecayTime { get; init; } = TimeSpan.FromSeconds(1.49f);
-
-    /// <summary>
-    /// Gets the ratio of the high-frequency decay time to <see cref="DecayTime"/>.
-    /// </summary>
-    /// <value>A value from 0.1 to 2.</value>
-    public float DecayHighRatio { get; init; } = 0.83f;
-
-    /// <summary>
-    /// Gets the linear output gain of the early reflections.
+    /// Gets the time for reverberation to decay by 60 decibels.
     /// </summary>
     /// <value>
-    /// A value from 0 to 3.16.
+    /// A duration from 0.1 to 20 seconds.
     /// </value>
-    public float EarlyGain { get; init; } = 0.05f;
+    public TimeSpan Decay { get; init; } = TimeSpan.FromSeconds(1.49f);
 
     /// <summary>
-    /// Gets the delay from the dry signal to the first early reflection.
+    /// Gets the perceived size and modal density of the room.
     /// </summary>
     /// <value>
-    /// A duration from zero to 300 milliseconds.
+    /// A value from 0 to 1.
     /// </value>
-    public TimeSpan EarlyDelay { get; init; } = TimeSpan.FromMilliseconds(50);
+    public float RoomSize { get; init; } = 1f;
 
     /// <summary>
-    /// Gets the linear output gain of the late reverberation.
+    /// Gets the high-frequency absorption of the room.
     /// </summary>
     /// <value>
-    /// A value from 0 to 10.
+    /// A value from 0 for bright to 1 for dark.
     /// </value>
-    public float LateGain { get; init; } = 1.26f;
+    public float Damping { get; init; } = 0.2f;
 
     /// <summary>
-    /// Gets the delay from the early-reflection input to the late reverberation.
+    /// Gets the dry/wet balance.
     /// </summary>
     /// <value>
-    /// A duration from zero to 100 milliseconds.
+    /// A value from 0 for dry to 1 for wet.
     /// </value>
-    public TimeSpan LateDelay { get; init; } = TimeSpan.FromMilliseconds(11);
+    public float Mix { get; init; } = 0.5f;
 
-    /// <summary>
-    /// Gets the high-frequency gain retained per meter of air propagation.
-    /// </summary>
-    /// <remarks>
-    /// This setting limits high-frequency decay when <see cref="HighLimit"/> is enabled.
-    /// </remarks>
-    /// <value>
-    /// A value from 0.892 to 1.
-    /// </value>
-    public float AirAbsorption { get; init; } = 0.994f;
-
-    /// <summary>
-    /// Gets whether air absorption places an upper limit on high-frequency decay time.
-    /// </summary>
-    public bool HighLimit { get; init; } = true;
-
-    /// <inheritdoc/>
-    public void Validate()
+    internal override void Validate()
     {
-        EffectValidation.Range(Gain, 0f, 1f, nameof(Gain));
-        EffectValidation.Range(HighGain, 0f, 1f, nameof(HighGain));
-        EffectValidation.Range(Density, 0f, 1f, nameof(Density));
-        EffectValidation.Range(Diffusion, 0f, 1f, nameof(Diffusion));
-        EffectValidation.Range(DecayTime, TimeSpan.FromSeconds(0.1), TimeSpan.FromSeconds(20), nameof(DecayTime));
-        EffectValidation.Range(DecayHighRatio, 0.1f, 2f, nameof(DecayHighRatio));
-        EffectValidation.Range(EarlyGain, 0f, 3.16f, nameof(EarlyGain));
-        EffectValidation.Range(EarlyDelay, TimeSpan.Zero, TimeSpan.FromSeconds(0.3), nameof(EarlyDelay));
-        EffectValidation.Range(LateGain, 0f, 10f, nameof(LateGain));
-        EffectValidation.Range(LateDelay, TimeSpan.Zero, TimeSpan.FromSeconds(0.1), nameof(LateDelay));
-        EffectValidation.Range(AirAbsorption, 0.892f, 1f, nameof(AirAbsorption));
+        EffectValidation.Range(Decay, TimeSpan.FromSeconds(0.1), TimeSpan.FromSeconds(20), nameof(Decay));
+        EffectValidation.Range(RoomSize, 0f, 1f, nameof(RoomSize));
+        EffectValidation.Range(Damping, 0f, 1f, nameof(Damping));
+        EffectValidation.Range(Mix, 0f, 1f, nameof(Mix));
+    }
+
+    internal override EffectProcessor CreateProcessor(int sampleRate, int channels)
+    {
+        return new ReverbProcessor(this, sampleRate, channels);
     }
 }
 
 internal sealed class ReverbProcessor : EffectProcessor
 {
-    private readonly int _channels;
+    private const float InputGain = 0.32f;
 
-    private readonly float _gain;
+    private readonly DryWetMix _mix;
 
     private readonly OpenAlReverb[] _reverbs;
 
-    public ReverbProcessor(ReverbEffect effect, int sampleRate, int channels)
+    public ReverbProcessor(ReverbEffect effect, int sampleRate, int channels) : base(sampleRate, channels)
     {
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(sampleRate);
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(channels);
-        _channels = channels;
-        _gain = effect.Gain;
+        _mix = new DryWetMix(effect.Mix);
         _reverbs = new OpenAlReverb[channels];
+
         for (var channel = 0; channel < channels; channel++)
         {
             _reverbs[channel] = new OpenAlReverb(effect, sampleRate);
@@ -142,8 +82,9 @@ internal sealed class ReverbProcessor : EffectProcessor
 
         for (var index = 0; index < pcm.Length; index++)
         {
-            var channel = index % _channels;
-            pcm[index] += _reverbs[channel].Process(pcm[index], _gain);
+            var dry = pcm[index];
+            var wet = _reverbs[index % _channels].Process(dry, InputGain);
+            pcm[index] = _mix.Blend(dry, wet);
         }
     }
 }

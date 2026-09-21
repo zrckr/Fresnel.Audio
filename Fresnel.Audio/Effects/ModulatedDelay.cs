@@ -24,18 +24,31 @@ internal sealed class ModulatedDelay
 
     private readonly float _phaseOffset;
 
-    private readonly EffectWaveform _waveform;
+    private readonly OscillatorWaveform _waveform;
+
+    private readonly DryWetMix _mix;
 
     private float _phase;
 
     private int _writeIndex;
 
-    internal ModulatedDelay(EffectWaveform waveform, float phaseDegrees, float rateHz, float depth,
-        float feedback, TimeSpan delay, float maximumDelaySeconds, int sampleRate, int channels)
+    internal ModulatedDelay(
+        OscillatorWaveform waveform,
+        float phaseDegrees,
+        float rateHz,
+        float depth,
+        float feedback,
+        TimeSpan delay,
+        float maximumDelaySeconds,
+        float mix,
+        int sampleRate,
+        int channels
+    )
     {
         _waveform = waveform;
         _channels = channels;
         _feedback = feedback;
+        _mix = new DryWetMix(mix);
         if (rateHz > 0f)
         {
             // OpenAL constrains the LFO to a whole number of samples per cycle.
@@ -85,15 +98,15 @@ internal sealed class ModulatedDelay
                 // Treat direct channels as left/right pairs. This preserves the
                 // two LFO phases without importing OpenAL's ambisonic router.
                 var channelPhase = (channel & 1) == 0 ? _phase : _phase + _phaseOffset;
-                var modulatedDelay = _baseDelay + (_waveform.Phased(channelPhase) * _depth);
+                var modulatedDelay = _baseDelay + (PhaseWaveform(_waveform, channelPhase) * _depth);
                 var delayed = ReadCubic(line, _writeIndex, modulatedDelay);
                 var feedbackIndex = Wrap(_writeIndex - (int)MathF.Round(_baseDelay), line.Length);
                 line[_writeIndex] += line[feedbackIndex] * _feedback;
-                pcm[index] = (input + delayed) * 0.5f;
+                pcm[index] = _mix.Blend(input, delayed);
             }
 
             _writeIndex = (_writeIndex + 1) & (_delayLines[0].Length - 1);
-            _phase = EffectExtensions.WrapPhase(_phase + _phaseIncrement);
+            _phase = WrapPhase(_phase + _phaseIncrement);
         }
     }
 
@@ -119,5 +132,24 @@ internal sealed class ModulatedDelay
     {
         value %= length;
         return value < 0 ? value + length : value;
+    }
+
+    private static float WrapPhase(float phase)
+    {
+        phase %= MathF.Tau;
+        return phase < 0f ? phase + MathF.Tau : phase;
+    }
+
+    internal static float PhaseWaveform(OscillatorWaveform waveform, float phase)
+    {
+        phase = WrapPhase(phase);
+        return waveform switch
+        {
+            OscillatorWaveform.Sawtooth => (phase / MathF.PI) - 1f,
+            OscillatorWaveform.Sine => MathF.Sin(phase),
+            OscillatorWaveform.Square => phase < MathF.PI ? 1f : -1f,
+            OscillatorWaveform.Triangle => 1f - (2f * MathF.Abs((phase / MathF.PI) - 1f)),
+            _ => throw new ArgumentOutOfRangeException(nameof(waveform))
+        };
     }
 }

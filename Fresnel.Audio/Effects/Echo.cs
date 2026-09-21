@@ -1,39 +1,20 @@
-﻿// DSP implementation adapted from OpenAL Soft 1.25.2.
-// Source: alc/effects/echo.cpp.
-// Upstream notice: Copyright (C) 2009 Chris Robinson.
-// Adapted portions are licensed under LGPL-2.0-or-later.
+// DSP implementation adapted from OpenAL Soft 1.25.2.
 // See THIRD-PARTY-NOTICES.md for attribution and license terms.
 
 namespace Fresnel.Audio;
 
 /// <summary>
-/// Configures a damped two-tap echo effect.
+/// Configures a damped, stereo two-tap echo.
 /// </summary>
-public readonly record struct EchoEffect() : IEffect
+public sealed record EchoEffect : AudioEffect
 {
     /// <summary>
-    /// Gets the time from the dry signal to the first echo tap.
+    /// Gets the time to the first tap and between successive taps.
     /// </summary>
     /// <value>
     /// A duration from zero to 207 milliseconds.
     /// </value>
     public TimeSpan Delay { get; init; } = TimeSpan.FromMilliseconds(100);
-
-    /// <summary>
-    /// Gets the additional delay between the first and second echo taps.
-    /// </summary>
-    /// <value>
-    /// A duration from zero to 404 milliseconds.
-    /// </value>
-    public TimeSpan TapDelay { get; init; } = TimeSpan.FromMilliseconds(100);
-
-    /// <summary>
-    /// Gets the high-frequency attenuation applied to the feedback signal.
-    /// </summary>
-    /// <value>
-    /// A value from 0 for no damping to 0.99 for maximum damping.
-    /// </value>
-    public float Damping { get; init; } = 0.5f;
 
     /// <summary>
     /// Gets the proportion of the second tap fed back into the delay line.
@@ -44,31 +25,37 @@ public readonly record struct EchoEffect() : IEffect
     public float Feedback { get; init; } = 0.5f;
 
     /// <summary>
-    /// Gets the stereo separation and ordering of the two taps.
+    /// Gets the high-frequency attenuation of the repeats.
     /// </summary>
     /// <value>
-    /// A value from -1 to 1. Zero centers both taps; either extreme places them
-    /// on opposite sides, with the sign selecting which tap is on the left.
+    /// A value from 0 for bright to 1 for dark.
     /// </value>
-    public float Spread { get; init; } = -1f;
+    public float Damping { get; init; } = 0.5f;
 
-    /// <inheritdoc/>
-    public void Validate()
+    /// <summary>
+    /// Gets the dry/wet balance.
+    /// </summary>
+    /// <value>
+    /// A value from 0 for dry to 1 for wet.
+    /// </value>
+    public float Mix { get; init; } = 0.5f;
+
+    internal override void Validate()
     {
         EffectValidation.Range(Delay, TimeSpan.Zero, TimeSpan.FromSeconds(0.207), nameof(Delay));
-        EffectValidation.Range(TapDelay, TimeSpan.Zero, TimeSpan.FromSeconds(0.404), nameof(TapDelay));
-        EffectValidation.Range(Damping, 0f, 0.99f, nameof(Damping));
         EffectValidation.Range(Feedback, 0f, 1f, nameof(Feedback));
-        EffectValidation.Range(Spread, -1f, 1f, nameof(Spread));
+        EffectValidation.Range(Damping, 0f, 1f, nameof(Damping));
+        EffectValidation.Range(Mix, 0f, 1f, nameof(Mix));
+    }
+
+    internal override EffectProcessor CreateProcessor(int sampleRate, int channels)
+    {
+        return new EchoProcessor(this, sampleRate, channels);
     }
 }
 
 internal sealed class EchoProcessor : EffectProcessor
 {
-    private const float WetGain = 0.5f;
-
-    private readonly int _channels;
-
     private readonly float[][] _delayLines;
 
     private readonly BiquadFilter[] _dampingFilters;
@@ -79,30 +66,24 @@ internal sealed class EchoProcessor : EffectProcessor
 
     private readonly int _secondTapDelay;
 
-    private readonly float _spread;
+    private readonly DryWetMix _mix;
 
     private int _writeIndex;
 
-    public EchoProcessor(EchoEffect effect, int sampleRate, int channels)
+    public EchoProcessor(EchoEffect effect, int sampleRate, int channels) : base(sampleRate, channels)
     {
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(sampleRate);
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(channels);
-        _channels = channels;
         _feedback = effect.Feedback;
-        _spread = effect.Spread;
+        _mix = new DryWetMix(effect.Mix);
         _firstTapDelay = Math.Max((int)MathF.Round((float)effect.Delay.TotalSeconds * sampleRate), 1);
-        _secondTapDelay = _firstTapDelay +
-                          (int)MathF.Round((float)effect.TapDelay.TotalSeconds * sampleRate);
+        _secondTapDelay = _firstTapDelay * 2;
 
         var length = 1;
-        var required = checked((int)MathF.Ceiling((0.207f + 0.404f) * sampleRate) + 1);
+        var required = checked((int)MathF.Ceiling(0.414f * sampleRate) + 1);
         while (length < required)
         {
             length <<= 1;
         }
 
-        // A stereo echo follows OpenAL's mono send model, allowing Spread to pan
-        // the two taps. Other layouts retain one direct delay line per channel.
         var lines = channels == 2 ? 1 : channels;
         _delayLines = new float[lines][];
         _dampingFilters = new BiquadFilter[lines];
@@ -110,8 +91,8 @@ internal sealed class EchoProcessor : EffectProcessor
         for (var line = 0; line < lines; line++)
         {
             _delayLines[line] = new float[length];
-            _dampingFilters[line] = BiquadFilter.FromSlope(BiquadType.HighShelf, 5_000f,
-                highGain, 1f, sampleRate);
+            _dampingFilters[line] = BiquadFilter.FromSlope(
+                BiquadType.HighShelf, 5_000f, highGain, 1f, sampleRate);
         }
     }
 
@@ -126,21 +107,19 @@ internal sealed class EchoProcessor : EffectProcessor
         {
             if (_channels == 2)
             {
-                var input = (pcm[frameOffset] + pcm[frameOffset + 1]) * 0.5f;
-                var (first, second) = ProcessLine(input, 0);
-                var firstPosition = -_spread;
-                var secondPosition = _spread;
-                Pan(firstPosition, out var firstLeft, out var firstRight);
-                Pan(secondPosition, out var secondLeft, out var secondRight);
-                pcm[frameOffset] += ((first * firstLeft) + (second * secondLeft)) * WetGain;
-                pcm[frameOffset + 1] += ((first * firstRight) + (second * secondRight)) * WetGain;
+                var dryLeft = pcm[frameOffset];
+                var dryRight = pcm[frameOffset + 1];
+                var (first, second) = ProcessLine((dryLeft + dryRight) * 0.5f, 0);
+                pcm[frameOffset] = _mix.Blend(dryLeft, second * 0.5f);
+                pcm[frameOffset + 1] = _mix.Blend(dryRight, first * 0.5f);
             }
             else
             {
                 for (var channel = 0; channel < _channels; channel++)
                 {
-                    var (first, second) = ProcessLine(pcm[frameOffset + channel], channel);
-                    pcm[frameOffset + channel] += (first + second) * WetGain;
+                    var dry = pcm[frameOffset + channel];
+                    var (first, second) = ProcessLine(dry, channel);
+                    pcm[frameOffset + channel] = _mix.Blend(dry, (first + second) * 0.5f);
                 }
             }
 
@@ -157,11 +136,5 @@ internal sealed class EchoProcessor : EffectProcessor
         var second = delayLine[(_writeIndex - _secondTapDelay) & mask];
         delayLine[_writeIndex] += _dampingFilters[line].Process(second) * _feedback;
         return (first, second);
-    }
-
-    private static void Pan(float position, out float left, out float right)
-    {
-        left = MathF.Sqrt((1f - position) * 0.5f);
-        right = MathF.Sqrt((1f + position) * 0.5f);
     }
 }

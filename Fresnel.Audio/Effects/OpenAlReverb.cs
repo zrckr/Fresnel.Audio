@@ -62,13 +62,21 @@ internal sealed class OpenAlReverb
 
     internal OpenAlReverb(ReverbEffect effect, int sampleRate)
     {
-        var densityMultiplier = Math.Max(1f, MathF.Cbrt(effect.Density * 1_000f));
-        var angle = effect.Diffusion * MathF.Atan(MathF.Sqrt(3f));
+        const float diffusion = 1f;
+        const float earlyGain = 0.05f;
+        const float lateGain = 1.26f;
+        const float airAbsorption = 0.994f;
+        const float earlyDelaySeconds = 0.05f;
+        const float lateDelaySeconds = 0.011f;
+
+        var densityMultiplier = Math.Max(1f, MathF.Cbrt(effect.RoomSize * 1_000f));
+        var angle = diffusion * MathF.Atan(MathF.Sqrt(3f));
+
         _mixX = MathF.Cos(angle);
         _mixY = MathF.Sin(angle) / MathF.Sqrt(3f);
-        _allPassCoefficient = effect.Diffusion * effect.Diffusion * InverseSqrt2;
-        _earlyGain = effect.EarlyGain;
-        _lateGain = effect.LateGain;
+        _allPassCoefficient = diffusion * diffusion * InverseSqrt2;
+        _earlyGain = earlyGain;
+        _lateGain = lateGain;
 
         var averageEarlyLength = 0f;
         for (var line = 0; line < 4; line++)
@@ -77,32 +85,32 @@ internal sealed class OpenAlReverb
         }
 
         averageEarlyLength = averageEarlyLength * 0.25f * densityMultiplier;
-        _earlyCoefficient = DecayCoefficient(averageEarlyLength, (float)effect.DecayTime.TotalSeconds);
+        _earlyCoefficient = DecayCoefficient(averageEarlyLength, (float)effect.Decay.TotalSeconds);
 
-        var highRatio = effect.DecayHighRatio;
-        if (effect is { HighLimit: true, AirAbsorption: < 1f })
+        var highRatio = 1f - (0.85f * effect.Damping);
+        if (airAbsorption < 1f)
         {
-            var decayLength = MathF.Log10(effect.AirAbsorption) *
-                (float)effect.DecayTime.TotalSeconds / -3f;
+            var decayLength = MathF.Log10(airAbsorption) *
+                (float)effect.Decay.TotalSeconds / -3f;
             if (decayLength > 0f)
             {
                 highRatio = Math.Min(highRatio, 1f / 343.3f / decayLength);
             }
         }
 
-        var midDecay = (float)effect.DecayTime.TotalSeconds;
+        var midDecay = (float)effect.Decay.TotalSeconds;
         var highDecay = Math.Clamp(midDecay * highRatio, 0.1f, 20f);
         var lateAverage = LateDelayAverage * densityMultiplier;
         var weightedDecay = (0.25f * midDecay) + (0.75f * highDecay);
         var densityDecay = DecayCoefficient(lateAverage, weightedDecay);
         _densityGain = MathF.Sqrt(1f - (densityDecay * densityDecay));
 
-        var maximumMainDelay = (float)effect.EarlyDelay.TotalSeconds +
+        var maximumMainDelay = earlyDelaySeconds +
                                (EarlyTapLengths[^1] * densityMultiplier) + 0.01f;
         for (var line = 0; line < 4; line++)
         {
             _mainDelay[line] = new RingDelay(ToSamples(maximumMainDelay, sampleRate));
-            _earlyTap[line] = ToSamples((float)effect.EarlyDelay.TotalSeconds +
+            _earlyTap[line] = ToSamples(earlyDelaySeconds +
                                         (EarlyTapLengths[line] * densityMultiplier), sampleRate, true);
             _earlyAllPass[line] = new RingDelay(ToSamples(EarlyAllPassLengths[line] *
                                                           densityMultiplier, sampleRate));
@@ -114,16 +122,16 @@ internal sealed class OpenAlReverb
             var lateLength = LateLineLengths[line] * densityMultiplier;
             _lateFeedback[line] = new RingDelay(ToSamples(lateLength, sampleRate));
             var relativeLateLength = (LateLineLengths[line] - LateLineLengths[0]) * 0.25f;
-            var lateInputDelay = ToSamples((float)effect.LateDelay.TotalSeconds +
-                                            (relativeLateLength * densityMultiplier), sampleRate, true);
+            var lateInputDelay = ToSamples(lateDelaySeconds +
+                                           (relativeLateLength * densityMultiplier), sampleRate, true);
             _lateInput[line] = lateInputDelay > 0 ? new RingDelay(lateInputDelay) : null;
 
             _highFilters[line] = BiquadFilter.FromSlope(BiquadType.HighShelf, 5_000f,
-                effect.HighGain, 1f, sampleRate);
+                1f - (0.85f * effect.Damping), 1f, sampleRate);
             // OpenAL approximates the vector all-pass absorption by blending
             // each line's length toward the average as diffusion increases.
             var allPassLength = Lerp(LateAllPassLengths[line], LateAllPassAverage,
-                effect.Diffusion) * densityMultiplier;
+                diffusion) * densityMultiplier;
             var decayLength = lateLength + allPassLength;
             _lateMidGain[line] = DecayCoefficient(decayLength, midDecay);
             var highGain = DecayCoefficient(decayLength, highDecay) / _lateMidGain[line];

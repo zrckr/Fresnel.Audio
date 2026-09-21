@@ -9,16 +9,15 @@ namespace Fresnel.Audio;
 /// <summary>
 /// Configures an automatic gain effect that compresses the signal's dynamic range.
 /// </summary>
-public readonly record struct CompressorEffect() : IEffect
+public sealed record CompressorEffect : AudioEffect
 {
-    /// <summary>
-    /// Gets whether dynamic-range compression is applied.
-    /// </summary>
-    public bool Enabled { get; init; } = true;
-
-    /// <inheritdoc/>
-    public void Validate()
+    internal override void Validate()
     {
+    }
+
+    internal override EffectProcessor CreateProcessor(int sampleRate, int channels)
+    {
+        return new CompressorProcessor(sampleRate, channels);
     }
 }
 
@@ -34,21 +33,12 @@ internal sealed class CompressorProcessor : EffectProcessor
 
     private readonly float _attackMultiplier;
 
-    private readonly int _channels;
-
-    private readonly bool _enabled;
-
     private readonly float _releaseMultiplier;
 
     private float _envelope = 1f;
 
-    public CompressorProcessor(CompressorEffect effect, int sampleRate, int channels)
+    public CompressorProcessor(int sampleRate, int channels): base(sampleRate, channels)
     {
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(sampleRate);
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(channels);
-
-        _channels = channels;
-        _enabled = effect.Enabled;
         _attackMultiplier = MathF.Pow(EnvelopeMaximum / EnvelopeMinimum, 1f / (sampleRate * AttackSeconds));
         _releaseMultiplier = MathF.Pow(EnvelopeMinimum / EnvelopeMaximum, 1f / (sampleRate * ReleaseSeconds));
     }
@@ -58,11 +48,6 @@ internal sealed class CompressorProcessor : EffectProcessor
         if (pcm.Length % _channels != 0)
         {
             throw new ArgumentException("PCM data must contain complete sample frames.", nameof(pcm));
-        }
-
-        if (!_enabled)
-        {
-            return;
         }
 
         for (var frameOffset = 0; frameOffset < pcm.Length; frameOffset += _channels)

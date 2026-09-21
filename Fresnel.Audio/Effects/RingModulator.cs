@@ -1,4 +1,4 @@
-﻿// DSP implementation adapted from OpenAL Soft 1.25.2.
+// DSP implementation adapted from OpenAL Soft 1.25.2.
 // Source: alc/effects/modulator.cpp.
 // Upstream notice: Copyright (C) 2009 Chris Robinson.
 // Adapted portions are licensed under LGPL-2.0-or-later.
@@ -9,12 +9,12 @@ namespace Fresnel.Audio;
 /// <summary>
 /// Configures a ring modulator that multiplies the signal by a periodic carrier.
 /// </summary>
-public readonly record struct RingModulatorEffect() : IEffect
+public sealed record RingModulatorEffect : AudioEffect
 {
     /// <summary>
     /// Gets the carrier waveform.
     /// </summary>
-    public EffectWaveform Waveform { get; init; } = EffectWaveform.Sine;
+    public OscillatorWaveform Waveform { get; init; } = OscillatorWaveform.Sine;
 
     /// <summary>
     /// Gets the carrier frequency, in hertz.
@@ -25,46 +25,45 @@ public readonly record struct RingModulatorEffect() : IEffect
     public float FrequencyHz { get; init; } = 440f;
 
     /// <summary>
-    /// Gets the cutoff frequency of the high-pass filter applied before modulation, in hertz.
+    /// Gets the dry/wet balance.
     /// </summary>
-    /// <remarks>
-    /// The property name is retained for API compatibility with the original effect definition.
-    /// </remarks>
     /// <value>
-    /// A value from 0 to 24,000.
+    /// A value from 0 for dry to 1 for wet.
     /// </value>
-    public float HighCut { get; init; } = 800f;
+    public float Mix { get; init; } = 1f;
 
     /// <inheritdoc/>
-    public void Validate()
+    internal override void Validate()
     {
         EffectValidation.Waveform(Waveform, nameof(Waveform));
         EffectValidation.Range(FrequencyHz, 0f, 8_000f, nameof(FrequencyHz));
-        EffectValidation.Range(HighCut, 0f, 24_000f, nameof(HighCut));
+        EffectValidation.Range(Mix, 0f, 1f, nameof(Mix));
+    }
+
+    internal override EffectProcessor CreateProcessor(int sampleRate, int channels)
+    {
+        return new RingModulatorProcessor(this, sampleRate, channels);
     }
 }
 
 internal sealed class RingModulatorProcessor : EffectProcessor
 {
-    private readonly int _channels;
-
     private readonly BiquadFilter[] _highPassFilters;
 
     private readonly int _range;
 
     private readonly float _scale;
 
-    private readonly EffectWaveform _waveform;
+    private readonly OscillatorWaveform _waveform;
+
+    private readonly DryWetMix _mix;
 
     private int _index;
 
-    public RingModulatorProcessor(RingModulatorEffect effect, int sampleRate, int channels)
+    public RingModulatorProcessor(RingModulatorEffect effect, int sampleRate, int channels) : base(sampleRate, channels)
     {
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(sampleRate);
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(channels);
-
-        _channels = channels;
         _waveform = effect.Waveform;
+        _mix = new DryWetMix(effect.Mix);
 
         // OpenAL rounds the oscillator to a whole number of samples per cycle.
         // Besides matching its waveform generation, this avoids discontinuities
@@ -72,21 +71,21 @@ internal sealed class RingModulatorProcessor : EffectProcessor
         _range = effect.FrequencyHz > 0f
             ? (int)Math.Clamp(MathF.Floor((sampleRate / effect.FrequencyHz) + 0.5f), 1f, sampleRate)
             : 1;
-        if (_waveform == EffectWaveform.Square && _range > 1)
+        if (_waveform == OscillatorWaveform.Square && _range > 1)
         {
             _range = (_range + 1) & ~1;
         }
 
         _scale = _waveform switch
         {
-            EffectWaveform.Sine or EffectWaveform.Triangle => MathF.Tau / _range,
-            EffectWaveform.Sawtooth => _range > 1 ? 2f / (_range - 1) : 0f,
-            EffectWaveform.Square => _range > 1 ? 1f / (_range - 1) : 0f,
+            OscillatorWaveform.Sine or OscillatorWaveform.Triangle => MathF.Tau / _range,
+            OscillatorWaveform.Sawtooth => _range > 1 ? 2f / (_range - 1) : 0f,
+            OscillatorWaveform.Square => _range > 1 ? 1f / (_range - 1) : 0f,
             _ => 0f
         };
         _highPassFilters = new BiquadFilter[channels];
 
-        var cutoff = Math.Clamp(effect.HighCut, sampleRate / 512f, sampleRate * 0.49f);
+        var cutoff = Math.Clamp(800f, sampleRate / 512f, sampleRate * 0.49f);
         for (var channel = 0; channel < channels; channel++)
         {
             _highPassFilters[channel] = BiquadFilter.FromBandwidth(BiquadType.HighPass, cutoff,
@@ -106,8 +105,10 @@ internal sealed class RingModulatorProcessor : EffectProcessor
             var carrier = Carrier();
             for (var channel = 0; channel < _channels; channel++)
             {
-                pcm[frameOffset + channel] = _highPassFilters[channel].Process(
-                    pcm[frameOffset + channel]) * carrier;
+                var index = frameOffset + channel;
+                var dry = pcm[index];
+                var wet = _highPassFilters[channel].Process(dry) * carrier;
+                pcm[index] = _mix.Blend(dry, wet);
             }
 
             if (++_index == _range)
@@ -126,12 +127,12 @@ internal sealed class RingModulatorProcessor : EffectProcessor
 
         return _waveform switch
         {
-            EffectWaveform.Sine => MathF.Sin(_index * _scale),
-            EffectWaveform.Sawtooth => (_index * _scale) - 1f,
-            EffectWaveform.Square => (_index * _scale) < 0.5f ? 1f : -1f,
+            OscillatorWaveform.Sine => MathF.Sin(_index * _scale),
+            OscillatorWaveform.Sawtooth => (_index * _scale) - 1f,
+            OscillatorWaveform.Square => (_index * _scale) < 0.5f ? 1f : -1f,
             // Triangle is a Fresnel extension; OpenAL EFX only defines the
             // other three ring-modulator waveforms.
-            EffectWaveform.Triangle => _waveform.Phased(_index * _scale),
+            OscillatorWaveform.Triangle => ModulatedDelay.PhaseWaveform(_waveform, _index * _scale),
             _ => 1f
         };
     }

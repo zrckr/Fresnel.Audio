@@ -71,8 +71,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="..\THIRD-PARTY-NOTICES.md" Pack="true" PackagePath="" />
-    <None Include="..\LICENSES\LGPL-2.0-or-later.txt" Pack="true" PackagePath="licenses" />
+    <None Include="Effects\THIRD-PARTY-NOTICES.md" Pack="true" PackagePath="" />
+    <None Include="Effects\LGPL-2.0-or-later.txt" Pack="true" PackagePath="licenses" />
   </ItemGroup>
 
 </Project>

@@ -1,7 +1,4 @@
-﻿// DSP implementation adapted from OpenAL Soft 1.25.2.
-// Source: alc/effects/distortion.cpp.
-// Upstream notice: Copyright (C) 2013 Mike Gorchak.
-// Adapted portions are licensed under LGPL-2.0-or-later.
+// DSP implementation adapted from OpenAL Soft 1.25.2.
 // See THIRD-PARTY-NOTICES.md for attribution and license terms.
 
 namespace Fresnel.Audio;
@@ -9,56 +6,42 @@ namespace Fresnel.Audio;
 /// <summary>
 /// Configures an oversampled waveshaping distortion effect.
 /// </summary>
-public readonly record struct DistortionEffect() : IEffect
+public sealed record DistortionEffect : AudioEffect
 {
-    /// <summary>
-    /// Gets the linear output gain applied after distortion.
-    /// </summary>
-    /// <value>
-    /// A value from 0.01 to 1.
-    /// </value>
-    public float Gain { get; init; } = 0.2f; // [0.01, 1]
-
     /// <summary>
     /// Gets the amount of nonlinear waveshaping.
     /// </summary>
     /// <value>
-    /// A value from 0 for the softest curve to 1 for the strongest curve.
+    /// A value from 0 for clean to 1 for maximum drive.
     /// </value>
-    public float Edge { get; init; } = 0.2f; // [0, 1]
+    public float Drive { get; init; } = 0.2f;
 
     /// <summary>
-    /// Gets the low-pass cutoff applied before waveshaping, in hertz.
+    /// Gets the spectral brightness of the distorted signal.
     /// </summary>
     /// <value>
-    /// A value from 80 to 24,000.
+    /// A value from 0 for dark to 1 for bright.
     /// </value>
-    public float LowcutHz { get; init; } = 8000f; // [80, 24000]
+    public float Tone { get; init; } = 0.5f;
 
     /// <summary>
-    /// Gets the center frequency of the post-distortion band-pass filter, in hertz.
+    /// Gets the dry/wet balance.
     /// </summary>
     /// <value>
-    /// A value from 80 to 24,000.
+    /// A value from 0 for dry to 1 for wet.
     /// </value>
-    public float CenterHz { get; init; } = 3600f; // [80, 24000]
+    public float Mix { get; init; } = 0.5f;
 
-    /// <summary>
-    /// Gets the bandwidth of the post-distortion band-pass filter, in hertz.
-    /// </summary>
-    /// <value>
-    /// A value from 80 to 24,000.
-    /// </value>
-    public float BandwidthHz { get; init; } = 3600f; // [80, 24000]
-
-    /// <inheritdoc/>
-    public void Validate()
+    internal override void Validate()
     {
-        EffectValidation.Range(Gain, 0.01f, 1f, nameof(Gain));
-        EffectValidation.Range(Edge, 0f, 1f, nameof(Edge));
-        EffectValidation.Range(LowcutHz, 80f, 24_000f, nameof(LowcutHz));
-        EffectValidation.Range(CenterHz, 80f, 24_000f, nameof(CenterHz));
-        EffectValidation.Range(BandwidthHz, 80f, 24_000f, nameof(BandwidthHz));
+        EffectValidation.Range(Drive, 0f, 1f, nameof(Drive));
+        EffectValidation.Range(Tone, 0f, 1f, nameof(Tone));
+        EffectValidation.Range(Mix, 0f, 1f, nameof(Mix));
+    }
+
+    internal override EffectProcessor CreateProcessor(int sampleRate, int channels)
+    {
+        return new DistortionProcessor(this, sampleRate, channels);
     }
 }
 
@@ -66,35 +49,35 @@ internal sealed class DistortionProcessor : EffectProcessor
 {
     private const float BandwidthOctaves = 0.746268656716f;
 
-    private readonly int _channels;
-
     private readonly float _edgeCoefficient;
 
     private readonly float _gain;
+
+    private readonly DryWetMix _mix;
 
     private readonly BiquadFilter[] _lowPassFilters;
 
     private readonly BiquadFilter[] _bandPassFilters;
 
-    public DistortionProcessor(DistortionEffect effect, int sampleRate, int channels)
+    public DistortionProcessor(DistortionEffect effect, int sampleRate, int channels) : base(sampleRate, channels)
     {
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(sampleRate);
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(channels);
-
-        var edge = Math.Min(MathF.Sin(MathF.PI * 0.5f * effect.Edge), 0.99f);
+        var edge = Math.Min(MathF.Sin(MathF.PI * 0.5f * effect.Drive), 0.99f);
         _edgeCoefficient = 2f * edge / (1f - edge);
-        _gain = effect.Gain;
-        _channels = channels;
+        _gain = 1f - (0.8f * effect.Drive);
+        _mix = new DryWetMix(effect.Mix);
         _lowPassFilters = new BiquadFilter[channels];
         _bandPassFilters = new BiquadFilter[channels];
 
+        // A logarithmic sweep makes equal movements of Tone sound evenly spaced.
+        var toneOffset = (2f * effect.Tone) - 1f;
+        var lowPassHz = 8_000f * MathF.Pow(3f, toneOffset);
+        var centerHz = 3_600f * MathF.Pow(6.6666665f, toneOffset);
         for (var channel = 0; channel < channels; channel++)
         {
             _lowPassFilters[channel] = BiquadFilter.FromBandwidth(
-                BiquadType.LowPass, effect.LowcutHz, 1f, BandwidthOctaves, sampleRate * 4);
+                BiquadType.LowPass, lowPassHz, 1f, BandwidthOctaves, sampleRate * 4);
             _bandPassFilters[channel] = BiquadFilter.FromBandwidth(
-                BiquadType.BandPass, effect.CenterHz, 1f, effect.BandwidthHz / (effect.CenterHz * 0.67f),
-                sampleRate * 4);
+                BiquadType.BandPass, centerHz, 1f, 1f / 0.67f, sampleRate * 4);
         }
     }
 
@@ -107,11 +90,12 @@ internal sealed class DistortionProcessor : EffectProcessor
 
         for (var index = 0; index < pcm.Length; index++)
         {
+            var dry = pcm[index];
             var channel = index % _channels;
-            var output = 0f;
+            var wet = 0f;
             for (var phase = 0; phase < 4; phase++)
             {
-                var sample = phase == 0 ? pcm[index] * 4f : 0f;
+                var sample = phase == 0 ? dry * 4f : 0f;
                 sample = _lowPassFilters[channel].Process(sample);
                 sample = Shape(sample, _edgeCoefficient);
                 sample = Shape(sample, _edgeCoefficient, invert: true);
@@ -119,18 +103,17 @@ internal sealed class DistortionProcessor : EffectProcessor
                 sample = _bandPassFilters[channel].Process(sample);
                 if (phase == 0)
                 {
-                    output = sample;
+                    wet = sample;
                 }
             }
 
-            pcm[index] = output * _gain;
+            pcm[index] = _mix.Blend(dry, wet * _gain);
         }
     }
 
     private static float Shape(float sample, float coefficient, bool invert = false)
     {
-        var numerator = (1f + coefficient) * sample;
-        var result = numerator / (1f + (coefficient * MathF.Abs(sample)));
+        var result = ((1f + coefficient) * sample) / (1f + (coefficient * MathF.Abs(sample)));
         return invert ? -result : result;
     }
 }

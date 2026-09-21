@@ -56,6 +56,11 @@ internal struct BiquadFilter
         return Create(type, frequencyHz, gain, reciprocalQ, sampleRate);
     }
 
+    internal static BiquadFilter FromQ(BiquadType type, float frequencyHz, float gain, float q, int sampleRate)
+    {
+        return Create(type, frequencyHz, gain, 1f / q, sampleRate);
+    }
+
     private static BiquadFilter Create(BiquadType type, float frequencyHz, float gain, float reciprocalQ,
         int sampleRate)
     {

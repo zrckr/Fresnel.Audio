@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using Foster.Framework;
 using Fresnel.Audio;
@@ -46,7 +47,7 @@ internal sealed class PlaybackDemo : App
 
     private float _listenerRotation2D;
 
-    private bool _spatialAutopilot = true;
+    private bool _spatialAutopilot;
 
     private float _spatialOrbitAngle;
 
@@ -60,7 +61,11 @@ internal sealed class PlaybackDemo : App
         : base(new AppConfig("Fresnel.Sample", "Fresnel.Audio playback demo", 1280, 720))
     {
         var mixerConfig = new ExampleMixerConfig();
-        _mixer = new ExampleMixer(mixerConfig);
+        var json = JsonSerializer.Serialize(mixerConfig, ExampleMixerConfigContext.Default.ExampleMixerConfig);
+        var roundTrippedConfig = JsonSerializer.Deserialize(
+            json, ExampleMixerConfigContext.Default.ExampleMixerConfig)
+            ?? throw new JsonException("The example mixer configuration could not be deserialized.");
+        _mixer = new ExampleMixer(roundTrippedConfig);
     }
 
     protected override void Startup()
@@ -514,6 +519,21 @@ internal sealed class PlaybackDemo : App
                 }
 
                 ImGui.Text($"Route: {route}");
+                ImGui.Text("Effect chain:");
+                if (bus.Effects.IsEmpty)
+                {
+                    ImGui.TextDisabled("  None");
+                }
+                else
+                {
+                    for (var i = 0; i < bus.Effects.Length; i++)
+                    {
+                        var effect = bus.Effects[i];
+                        ImGui.TextDisabled($"{i}.");
+                        ImGui.SameLine();
+                        ImGui.TextWrapped(effect.ToString());
+                    }
+                }
 
                 ImGui.TreePop();
             }
@@ -550,7 +570,17 @@ internal sealed class ExampleMixerConfig
 
     public AudioBus Music { get; init; } = new()
     {
-        Volume = -12f
+        Volume = -12f,
+        Effects =
+        [
+            new EqualizerEffect
+            {
+                Shape = EqualizerShape.HighShelf,
+                FrequencyHz = 8_000f,
+                Gain = new Db(1.5f),
+                Q = 0.707f
+            }
+        ]
     };
 
     public AudioBus Sfx { get; init; } = new()
@@ -560,19 +590,12 @@ internal sealed class ExampleMixerConfig
         [
             new ReverbEffect
             {
-                Gain = 0.45f,
-                HighGain = 0.75f,
-                Density = 0.85f,
-                Diffusion = 0.9f,
-                DecayTime = TimeSpan.FromSeconds(1.8),
-                DecayHighRatio = 0.7f,
-                EarlyGain = 0.3f,
-                EarlyDelay = TimeSpan.FromMilliseconds(18),
-                LateGain = 1.1f,
-                LateDelay = TimeSpan.FromMilliseconds(12),
-                AirAbsorption = 0.98f,
-                HighLimit = true
-            }
+                Decay = TimeSpan.FromSeconds(1.8),
+                RoomSize = 0.85f,
+                Damping = 0.35f,
+                Mix = 0.3f
+            },
+            new CompressorEffect()
         ]
     };
 }

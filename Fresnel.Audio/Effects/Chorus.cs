@@ -1,31 +1,15 @@
 // DSP implementation adapted from OpenAL Soft 1.25.2.
-// Source: alc/effects/chorus.cpp and core/cubic_tables.hpp.
-// Upstream notice: Copyright (C) 2013 Mike Gorchak.
-// Adapted portions are licensed under LGPL-2.0-or-later.
 // See THIRD-PARTY-NOTICES.md for attribution and license terms.
 
 namespace Fresnel.Audio;
 
 /// <summary>
-/// Configures a chorus effect produced by a modulated delay line.
+/// Configures a chorus produced by a modulated delay line.
 /// </summary>
-public readonly record struct ChorusEffect() : IEffect
+public sealed record ChorusEffect : AudioEffect
 {
     /// <summary>
-    /// Gets or sets the low-frequency oscillator waveform.
-    /// </summary>
-    public EffectWaveform Waveform { get; init; } = EffectWaveform.Triangle;
-
-    /// <summary>
-    /// Gets or sets the right-channel oscillator phase offset in degrees.
-    /// </summary>
-    /// <value>
-    /// A value from -180 to 180.
-    /// </value>
-    public float PhaseDegrees { get; init; } = 90f;
-
-    /// <summary>
-    /// Gets or sets the low-frequency oscillator rate in hertz.
+    /// Gets the modulation rate in hertz.
     /// </summary>
     /// <value>
     /// A value from 0 to 10.
@@ -33,7 +17,7 @@ public readonly record struct ChorusEffect() : IEffect
     public float RateHz { get; init; } = 1.1f;
 
     /// <summary>
-    /// Gets or sets modulation depth as a proportion of <see cref="Delay"/>.
+    /// Gets the perceptual modulation depth.
     /// </summary>
     /// <value>
     /// A value from 0 to 1.
@@ -41,48 +25,53 @@ public readonly record struct ChorusEffect() : IEffect
     public float Depth { get; init; } = 0.1f;
 
     /// <summary>
-    /// Gets or sets the delayed-signal feedback amount.
+    /// Gets the stereo separation of the modulation.
     /// </summary>
     /// <value>
-    /// A value from -1 to 1.
+    /// A value from 0 for mono modulation to 1 for a 180-degree offset.
     /// </value>
-    public float Feedback { get; init; } = 0.25f;
+    public float StereoWidth { get; init; } = 0.5f;
 
     /// <summary>
-    /// Gets or sets the base delay before modulation.
+    /// Gets the dry/wet balance.
     /// </summary>
     /// <value>
-    /// A value from zero to 16 milliseconds.
+    /// A value from 0 for dry to 1 for wet.
     /// </value>
-    public TimeSpan Delay { get; init; } = TimeSpan.FromMilliseconds(16);
+    public float Mix { get; init; } = 0.5f;
 
-    /// <inheritdoc/>
-    public void Validate()
+    internal override void Validate()
     {
-        EffectValidation.Waveform(Waveform, nameof(Waveform));
-        EffectValidation.Range(PhaseDegrees, -180f, 180f, nameof(PhaseDegrees));
         EffectValidation.Range(RateHz, 0f, 10f, nameof(RateHz));
         EffectValidation.Range(Depth, 0f, 1f, nameof(Depth));
-        EffectValidation.Range(Feedback, -1f, 1f, nameof(Feedback));
-        EffectValidation.Range(Delay, TimeSpan.Zero, TimeSpan.FromMilliseconds(16), nameof(Delay));
+        EffectValidation.Range(StereoWidth, 0f, 1f, nameof(StereoWidth));
+        EffectValidation.Range(Mix, 0f, 1f, nameof(Mix));
+    }
+
+    internal override EffectProcessor CreateProcessor(int sampleRate, int channels)
+    {
+        return new ChorusProcessor(this, sampleRate, channels);
     }
 }
 
 internal sealed class ChorusProcessor : EffectProcessor
 {
-    private const float MaximumDelaySeconds = 0.016f;
-
-    private readonly int _channels;
-
     private readonly ModulatedDelay _delay;
 
-    public ChorusProcessor(ChorusEffect effect, int sampleRate, int channels)
+    public ChorusProcessor(ChorusEffect effect, int sampleRate, int channels) : base(sampleRate, channels)
     {
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(sampleRate);
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(channels);
-        _channels = channels;
-        _delay = new ModulatedDelay(effect.Waveform, effect.PhaseDegrees, effect.RateHz, effect.Depth,
-            effect.Feedback, effect.Delay, MaximumDelaySeconds, sampleRate, channels);
+        _delay = new ModulatedDelay(
+            OscillatorWaveform.Triangle,
+            effect.StereoWidth * 180f,
+            effect.RateHz,
+            effect.Depth,
+            0.25f,
+            TimeSpan.FromMilliseconds(16),
+            0.016f,
+            effect.Mix,
+            sampleRate,
+            channels
+        );
     }
 
     public override void Process(Span<float> pcm)
