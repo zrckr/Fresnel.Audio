@@ -98,27 +98,50 @@ public abstract class AudioMixer
             throw new ArgumentException("The bus belongs to another mixer.", nameof(bus));
         }
 
-        var anySolo = _buses.Values.Any(candidate => candidate.Solo);
-        var inSoloSubtree = false;
-        var hasGain = true;
-
         for (var current = bus; current != null; current = current.Parent)
         {
             if (current.Muted)
             {
-                hasGain = false;
-                break;
+                return 0f;
+            }
+        }
+
+        return IsAudibleWithSolo()
+            ? bus.Volume.ToLinear()
+            : 0f;
+
+        bool IsAudibleWithSolo()
+        {
+            var anySolo = false;
+            foreach (var candidate in _buses.Values)
+            {
+                if (!candidate.Solo)
+                {
+                    continue;
+                }
+
+                anySolo = true;
+                if (IsAncestorOrSelf(candidate, bus) || IsAncestorOrSelf(bus, candidate))
+                {
+                    return true;
+                }
             }
 
-            inSoloSubtree |= current.Solo;
+            return !anySolo;
         }
 
-        if (!hasGain || (anySolo && !inSoloSubtree))
+        bool IsAncestorOrSelf(AudioBus ancestor, AudioBus candidate)
         {
-            return 0f;
-        }
+            for (var current = candidate; current != null; current = current.Parent)
+            {
+                if (ReferenceEquals(current, ancestor))
+                {
+                    return true;
+                }
+            }
 
-        return bus.Volume.ToLinear();
+            return false;
+        }
     }
 
     internal (float Left, float Right) GetStereoOutput(AudioBus bus)
