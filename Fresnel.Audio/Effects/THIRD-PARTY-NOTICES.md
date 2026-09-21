@@ -11,7 +11,7 @@ Upstream project: https://github.com/kcat/openal-soft
 The chorus, flanger, distortion, echo, equalizer, ring modulator, reverb,
 biquad, and cubic interpolation code is licensed under the GNU Library General
 Public License, version 2 or (at your option) any later version. The complete
-license is distributed in `LICENSES/LGPL-2.0-or-later.txt`.
+license is distributed in `licenses/LGPL-2.0-or-later.txt`.
 
 Relevant upstream copyright notices:
 
