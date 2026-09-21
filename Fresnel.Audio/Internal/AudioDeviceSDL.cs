@@ -404,9 +404,9 @@ internal sealed unsafe class AudioDeviceSDL : AudioDevice
             var busGroup = (BusGroup)GCHandle.FromIntPtr((nint)userData).Target!;
             busGroup.Capture(new ReadOnlySpan<float>(pcm, samples));
         }
-        catch
+        catch (Exception exception)
         {
-            // Exceptions must not cross the native audio callback boundary.
+            Log.Error($"Fresnel.Audio: Group post-mix callback failed: {exception}");
         }
     }
 
@@ -418,6 +418,8 @@ internal sealed unsafe class AudioDeviceSDL : AudioDevice
             var device = (AudioDeviceSDL)GCHandle.FromIntPtr((nint)userData).Target!;
             if (samples > MaximumCallbackSamples)
             {
+                Log.Warning($"Fresnel.Audio: Post-mix callback received {samples} samples, " +
+                            $"exceeding the maximum of {MaximumCallbackSamples}; processing was skipped.");
                 return;
             }
 
@@ -429,9 +431,9 @@ internal sealed unsafe class AudioDeviceSDL : AudioDevice
                 Add(output, rootGroup.Buffer.AsSpan(0, samples));
             }
         }
-        catch
+        catch (Exception exception)
         {
-            // Exceptions must not cross the native audio callback boundary.
+            Log.Error($"Fresnel.Audio: Post-mix callback failed: {exception}");
         }
     }
 
