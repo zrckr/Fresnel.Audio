@@ -1,4 +1,3 @@
-using System.Collections.Immutable;
 using System.Text.Json.Serialization;
 
 namespace Fresnel.Audio;
@@ -36,30 +35,6 @@ internal abstract class EffectProcessor
     }
 
     public abstract void Process(Span<float> pcm);
-}
-
-internal sealed class EffectChain
-{
-    private readonly EffectProcessor[] _processors;
-
-    internal EffectChain(ImmutableArray<AudioEffect> effects, int sampleRate, int channels)
-    {
-        _processors = new EffectProcessor[effects.Length];
-        for (var index = 0; index < effects.Length; index++)
-        {
-            var effect = effects[index];
-            effect.Validate();
-            _processors[index] = effect.CreateProcessor(sampleRate, channels);
-        }
-    }
-
-    internal void Process(Span<float> pcm)
-    {
-        foreach (var processor in _processors)
-        {
-            processor.Process(pcm);
-        }
-    }
 }
 
 internal readonly struct DryWetMix(float mix)

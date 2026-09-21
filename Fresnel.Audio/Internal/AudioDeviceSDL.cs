@@ -368,16 +368,16 @@ internal sealed unsafe class AudioDeviceSDL : AudioDevice
             throw Error(nameof(SDL3.SDL3_Mixer.GetMixerFormat));
         }
 
-        var effects = new EffectChain(bus.Effects, spec.freq, spec.channels);
+        var effects = bus.Effects.Register(spec.freq, spec.channels);
         var nativeGroup = SDL3.SDL3_Mixer.CreateGroup(GetMixer());
         if (nativeGroup == null)
         {
+            effects.Dispose();
             throw Error(nameof(SDL3.SDL3_Mixer.CreateGroup));
         }
 
         var group = new BusGroup(bus, nativeGroup, effects);
-        if (!SDL3.SDL3_Mixer.SetGroupPostMixCallback(nativeGroup, &GroupPostMix,
-                (void*)GCHandle.ToIntPtr(group.Handle)))
+        if (!SDL3.SDL3_Mixer.SetGroupPostMixCallback(nativeGroup, &GroupPostMix, (void*)GCHandle.ToIntPtr(group.Handle)))
         {
             group.Dispose();
             throw Error(nameof(SDL3.SDL3_Mixer.SetGroupPostMixCallback));
@@ -508,18 +508,18 @@ internal sealed unsafe class AudioDeviceSDL : AudioDevice
 
         internal readonly void* Group;
 
+        internal readonly EffectCollection.Registration Effects;
+
         internal GCHandle Handle;
 
         internal float Gain;
 
-        internal readonly EffectChain Effects;
-
-        internal BusGroup(AudioBus bus, void* group, EffectChain effects)
+        internal BusGroup(AudioBus bus, void* group, EffectCollection.Registration effects)
         {
             _children = [];
             _bus = bus;
-            Group = group;
             Effects = effects;
+            Group = group;
             Handle = GCHandle.Alloc(this);
             UpdateGain();
             _bus.Mixer.Changed += UpdateGain;
@@ -545,6 +545,7 @@ internal sealed unsafe class AudioDeviceSDL : AudioDevice
         public void Dispose()
         {
             _bus.Mixer.Changed -= UpdateGain;
+            Effects.Dispose();
             SDL3.SDL3_Mixer.SetGroupPostMixCallback(Group, null, null);
             if (Handle.IsAllocated)
             {

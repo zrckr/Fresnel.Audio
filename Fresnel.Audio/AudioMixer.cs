@@ -102,7 +102,7 @@ public abstract class AudioMixer
         var inSoloSubtree = false;
         var hasGain = true;
 
-        for (var current = bus; current is not null; current = current.Parent)
+        for (var current = bus; current != null; current = current.Parent)
         {
             if (current.Muted)
             {
@@ -130,7 +130,7 @@ public abstract class AudioMixer
 
         var left = 1f;
         var right = 1f;
-        for (var current = bus; current is not null; current = current.Parent)
+        for (var current = bus; current != null; current = current.Parent)
         {
             var pan = current.Pan;
             left *= 1f - Math.Max(pan, 0f);

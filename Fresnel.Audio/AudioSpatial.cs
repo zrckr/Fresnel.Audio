@@ -14,7 +14,7 @@ public abstract class AudioSpatial : IEquatable<AudioSpatial>
     /// <summary>
     /// Determines whether this spatial configuration is equal to another configuration.
     /// </summary>
-    public bool Equals(AudioSpatial? other) => other is not null && EqualsInternal(other);
+    public bool Equals(AudioSpatial? other) => other != null && EqualsInternal(other);
 
     /// <inheritdoc/>
     public override bool Equals(object? obj) => obj is AudioSpatial other && Equals(other);

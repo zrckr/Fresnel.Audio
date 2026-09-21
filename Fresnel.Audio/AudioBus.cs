@@ -1,5 +1,4 @@
-﻿using System.Collections.Immutable;
-using System.Text.Json.Serialization;
+﻿using System.Text.Json.Serialization;
 
 namespace Fresnel.Audio;
 
@@ -41,7 +40,7 @@ public sealed class AudioBus
     /// </value>
     public float Pan
     {
-        get => field;
+        get;
         set
         {
             if (!float.IsFinite(value) || value is < -1f or > 1f)
@@ -90,9 +89,40 @@ public sealed class AudioBus
     }
 
     /// <summary>
-    /// Gets or initializes the effects processed by this bus.
+    /// Gets the effects processed by this bus.
     /// </summary>
-    public ImmutableArray<AudioEffect> Effects { get; init; } = [];
+    public EffectCollection Effects { get; } = new();
+
+    /// <summary>
+    /// Applies settings from another bus while preserving this bus's mixer registration and routing.
+    /// </summary>
+    /// <param name="bus">
+    /// The bus whose settings should be applied.
+    /// </param>
+    public void Apply(AudioBus bus)
+    {
+        ArgumentNullException.ThrowIfNull(bus);
+        if (ReferenceEquals(this, bus))
+        {
+            return;
+        }
+
+        var controlsChanged = Volume != bus.Volume ||
+                              Math.Abs(Pan - bus.Pan) > float.Epsilon ||
+                              Muted != bus.Muted ||
+                              Solo != bus.Solo;
+
+        Effects.Apply(bus.Effects);
+        Volume = bus.Volume;
+        Pan = bus.Pan;
+        Muted = bus.Muted;
+        Solo = bus.Solo;
+
+        if (controlsChanged)
+        {
+            Changed?.Invoke();
+        }
+    }
 
     /// <summary>
     /// Gets the bus this bus routes through, or <see langword="null"/> for the master bus or an unregistered bus.

@@ -1,6 +1,4 @@
 using System.Numerics;
-using System.Text.Json;
-using System.Text.Json.Serialization;
 using Foster.Framework;
 using Fresnel.Audio;
 using Fresnel.Sample;
@@ -57,15 +55,14 @@ internal sealed class PlaybackDemo : App
 
     private float _listenerRotation3D;
 
-    public PlaybackDemo()
-        : base(new AppConfig("Fresnel.Sample", "Fresnel.Audio playback demo", 1280, 720))
+    public PlaybackDemo() : base(new AppConfig(
+        "Fresnel.Sample",
+        "Fresnel.Audio playback demo",
+        1280,
+        720
+    ))
     {
-        var mixerConfig = new ExampleMixerConfig();
-        var json = JsonSerializer.Serialize(mixerConfig, ExampleMixerConfigContext.Default.ExampleMixerConfig);
-        var roundTrippedConfig = JsonSerializer.Deserialize(
-            json, ExampleMixerConfigContext.Default.ExampleMixerConfig)
-            ?? throw new JsonException("The example mixer configuration could not be deserialized.");
-        _mixer = new ExampleMixer(roundTrippedConfig);
+        _mixer = new ExampleMixer(new ExampleMixerConfig());
     }
 
     protected override void Startup()
@@ -520,13 +517,13 @@ internal sealed class PlaybackDemo : App
 
                 ImGui.Text($"Route: {route}");
                 ImGui.Text("Effect chain:");
-                if (bus.Effects.IsEmpty)
+                if (bus.Effects.Count == 0)
                 {
                     ImGui.TextDisabled("  None");
                 }
                 else
                 {
-                    for (var i = 0; i < bus.Effects.Length; i++)
+                    for (var i = 0; i < bus.Effects.Count; i++)
                     {
                         var effect = bus.Effects[i];
                         ImGui.TextDisabled($"{i}.");
@@ -572,7 +569,7 @@ internal sealed class ExampleMixerConfig
     {
         Volume = -12f,
         Effects =
-        [
+        {
             new EqualizerEffect
             {
                 Shape = EqualizerShape.HighShelf,
@@ -580,14 +577,14 @@ internal sealed class ExampleMixerConfig
                 Gain = new Db(1.5f),
                 Q = 0.707f
             }
-        ]
+        }
     };
 
     public AudioBus Sfx { get; init; } = new()
     {
         Volume = -6f,
         Effects =
-        [
+        {
             new ReverbEffect
             {
                 Decay = TimeSpan.FromSeconds(1.8),
@@ -596,10 +593,6 @@ internal sealed class ExampleMixerConfig
                 Mix = 0.3f
             },
             new CompressorEffect()
-        ]
+        }
     };
 }
-
-[JsonSourceGenerationOptions(WriteIndented = true)]
-[JsonSerializable(typeof(ExampleMixerConfig))]
-internal partial class ExampleMixerConfigContext : JsonSerializerContext;
