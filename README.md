@@ -1,5 +1,8 @@
 # Fresnel.Audio
 
+[![NuGet](https://img.shields.io/nuget/v/Fresnel.Audio?label=NuGet)](https://www.nuget.org/packages/Fresnel.Audio)
+[![Foster Framework](https://img.shields.io/badge/Foster%20Framework-0.4.2-4c8eda)](https://www.nuget.org/packages/FosterFramework/0.4.2)
+
 Fresnel.Audio is a small audio companion for [Foster Framework](https://github.com/FosterFramework/Foster).
 It provides a straightforward API for music, sound effects, mixer buses, DSP effects, and spatial audio without
 requiring a separate commercial audio engine.
