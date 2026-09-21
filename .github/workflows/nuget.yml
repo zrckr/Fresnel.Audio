@@ -1,6 +1,7 @@
 name: Publish NuGet Package
 
 on:
+  workflow_dispatch:
   release:
     types: [published]
 
@@ -22,4 +23,8 @@ jobs:
           dotnet pack Fresnel.Audio/Fresnel.Audio.csproj -c Release --no-build -o artifacts
 
       - name: Push
-        run: dotnet nuget push artifacts/*.nupkg -k ${{ secrets.NUGET_TOKEN }} --skip-duplicate --source https://api.nuget.org/v3/index.json
+        shell: pwsh
+        run: |
+          Get-ChildItem -Path artifacts -Filter *.nupkg -File | ForEach-Object {
+            dotnet nuget push $_.FullName -k ${{ secrets.NUGET_TOKEN }} --skip-duplicate --source https://api.nuget.org/v3/index.json
+          }
